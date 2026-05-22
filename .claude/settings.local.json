@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash('.venv\\\\Scripts\\\\python.exe' -c *)",
+      "Bash(curl -s -X POST http://localhost:8000/api/camera/gate_cam/source -H 'Content-Type: application/json' -H 'x-admin-token: admin123' -d '{\"uri\": 0}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/camera/gate_cam/source -H 'Content-Type: application/json' -H 'x-admin-token: admin123' -d '{\"uri\": 1}')",
+      "Bash(curl -s -X DELETE http://localhost:8000/api/events/13 -H 'x-admin-token: admin123')",
+      "Bash(curl -s \"http://localhost:8000/api/events?limit=2\")",
+      "Bash(curl -s -I --max-time 2 http://localhost:8000/stream/gate_cam)",
+      "PowerShell(Get-NetTCPConnection *)"
+    ]
+  }
+}

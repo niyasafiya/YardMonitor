@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yard Monitor — Live Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ===================== Login overlay ===================== -->
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <div class="brand brand-lg"><span class="dot"></span>Yard Monitor</div>
+    <h1>Welcome back</h1>
+    <p class="muted">Sign in to manage the gate and authorized vehicles.</p>
+    <label class="field">
+      <span>Admin password</span>
+      <input id="login-pw" type="password" placeholder="••••••••" autocomplete="current-password" />
+    </label>
+    <button id="login-btn" class="btn primary block">Sign in</button>
+    <div id="login-err" class="err" hidden></div>
+    <p class="muted small hint">Default password <code>admin123</code> — change in <code>config.yaml</code>.</p>
+  </div>
+</div>
+
+<!-- ===================== Top bar ===================== -->
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>Yard Monitor</div>
+  <nav class="topbar-status">
+    <span id="ws-status" class="status pill bad"><span class="led"></span>Disconnected</span>
+    <span id="gate-status" class="status pill warn"><span class="led"></span>Gate: …</span>
+  </nav>
+  <div class="topbar-actions">
+    <button id="btn-gate-open"  class="btn ok">    <span class="ic">⤴</span> Open Gate</button>
+    <button id="btn-gate-close" class="btn ghost"> <span class="ic">⤵</span> Close</button>
+    <button id="btn-logout"     class="btn ghost"> Logout</button>
+  </div>
+</header>
+
+<!-- ===================== KPI strip ===================== -->
+<section class="kpis">
+  <div class="kpi">
+    <div class="kpi-label">Entries today</div>
+    <div class="kpi-value" id="kpi-entries">0</div>
+    <div class="kpi-trend ok">↗ live</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Exits today</div>
+    <div class="kpi-value" id="kpi-exits">0</div>
+    <div class="kpi-trend muted">tracked</div>
+  </div>
+  <div class="kpi danger">
+    <div class="kpi-label">Denied today</div>
+    <div class="kpi-value" id="kpi-denied">0</div>
+    <div class="kpi-trend danger">blocked</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Whitelisted</div>
+    <div class="kpi-value" id="kpi-whitelist">0</div>
+    <div class="kpi-trend muted">vehicles</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">In yard</div>
+    <div class="kpi-value" id="kpi-assets">0</div>
+    <div class="kpi-trend muted">assets</div>
+  </div>
+</section>
+
+<!-- ===================== Main grid ===================== -->
+<main class="grid">
+
+  <!-- Live cameras -->
+  <section class="card cameras">
+    <header>
+      <h2>Live Cameras</h2>
+      <span class="muted small" id="cam-meta">—</span>
+    </header>
+    <div id="camera-list" class="camera-grid">
+      <div class="placeholder">Connecting to cameras…</div>
+    </div>
+  </section>
+
+  <!-- Events feed -->
+  <section class="card events">
+    <header>
+      <h2>Recent Events</h2>
+      <span class="muted small" id="events-count">0 shown</span>
+    </header>
+    <div id="events" class="events-list">
+      <div class="empty">
+        <div class="empty-ic">🚙</div>
+        <div>Waiting for the first detection…</div>
+        <div class="muted small">Drive a vehicle past a gate camera.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Whitelist -->
+  <section class="card whitelist">
+    <header>
+      <h2>Authorized Vehicles</h2>
+      <button id="btn-add-whitelist" class="btn primary small">+ Add vehicle</button>
+    </header>
+    <div id="whitelist" class="table-wrap">
+      <div class="empty small">
+        <div class="empty-ic">📋</div>
+        <div>No vehicles authorized yet.</div>
+        <div class="muted">Click <b>+ Add vehicle</b> to register one.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Asset inventory -->
+  <section class="card assets">
+    <header>
+      <h2>Asset Inventory</h2>
+      <span class="muted small">Auto-tracked from yard cameras</span>
+    </header>
+    <div id="assets" class="asset-grid">
+      <div class="empty small">
+        <div class="empty-ic">📦</div>
+        <div>No assets detected yet.</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== Add to whitelist modal ===================== -->
+<div id="wl-modal" class="modal" hidden data-close-on-backdrop>
+  <div class="modal-card" role="dialog" aria-labelledby="wl-title">
+    <header class="modal-head">
+      <h2 id="wl-title">Authorize a vehicle</h2>
+      <button class="icon-btn" id="wl-x" title="Close" aria-label="Close">✕</button>
+    </header>
+    <p class="muted small" style="margin:0 0 6px 0">
+      The gate will auto-open whenever this plate is detected at an entry camera.
+    </p>
+    <div class="form-grid">
+      <label class="field">
+        <span>License plate <em>*</em></span>
+        <input id="wl-plate" placeholder="KL 07 BX 1234" autocapitalize="characters" />
+      </label>
+      <label class="field">
+        <span>Vehicle type</span>
+        <select id="wl-type">
+          <option value="">—</option>
+          <option>Car</option><option>Truck</option>
+          <option>Bus</option><option>Motorcycle</option><option>Bicycle</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Owner name</span>
+        <input id="wl-owner" placeholder="Full name" />
+      </label>
+      <label class="field">
+        <span>Phone</span>
+        <input id="wl-phone" placeholder="+91 …" />
+      </label>
+      <label class="field full">
+        <span>Company</span>
+        <input id="wl-company" placeholder="Optional" />
+      </label>
+      <label class="field full">
+        <span>Notes</span>
+        <textarea id="wl-notes" rows="2" placeholder="Optional"></textarea>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="wl-cancel">Cancel</button>
+      <button class="btn primary" id="wl-save">Save vehicle</button>
+    </div>
+    <div id="wl-err" class="err" hidden></div>
+  </div>
+</div>
+
+<!-- ===================== Toast stack ===================== -->
+<div id="toasts" class="toast-stack" aria-live="polite"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

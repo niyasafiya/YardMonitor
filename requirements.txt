@@ -1,0 +1,29 @@
+# Yard Monitor — Python dependencies
+# Tested with Python 3.10 / 3.11
+
+# Computer vision + ML
+ultralytics==8.3.40          # YOLOv8 detection + built-in ByteTrack tracker
+lapx>=0.5.2                  # required by ultralytics ByteTrack/BoT-SORT tracker
+opencv-python==4.10.0.84
+numpy==1.26.4
+Pillow==10.4.0
+easyocr==1.7.2               # License plate OCR (also pulls torch)
+torch>=2.2.0                 # Backend for YOLO + EasyOCR; pip will pick CPU/GPU wheel
+
+# Web backend
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+jinja2==3.1.4
+websockets==13.1
+pydantic==2.9.2
+
+# Utilities
+PyYAML==6.0.2
+python-dateutil==2.9.0
+SQLAlchemy==2.0.36
+
+# Dev
+pytest==8.3.3
+ruff>=0.4.0
+httpx>=0.27.0              # needed by FastAPI TestClient in tests

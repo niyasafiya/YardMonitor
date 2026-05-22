@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# data + models — heavy / generated
+data/yard_monitor.db
+data/snapshots/
+data/sample_*.mp4
+models/*.pt
+!models/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store

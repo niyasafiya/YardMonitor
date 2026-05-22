@@ -1,0 +1,99 @@
+# =============================================================
+# Yard Monitor — Configuration
+#
+# To switch camera source: edit ONE block below by uncommenting
+# the one you want and commenting the others.
+# =============================================================
+
+system:
+  name: "Yard Monitor"
+  timezone: "Asia/Kolkata"
+  log_level: "INFO"
+
+# ---------- Video sources ----------
+# Pick ONE of the three blocks below. Only the un-commented block is used.
+sources:
+
+  # ============================================================
+  # OPTION A — Laptop / USB webcam (default, works out of the box)
+  # ============================================================
+  - id: "gate_cam"
+    name: "Main Gate"
+    role: "gate"
+    uri: 1                        # 0 = built-in webcam, 1 = iVCam (phone)
+    fps_target: 5
+    direction_line_y: 0.55
+
+  # ============================================================
+  # OPTION B — Phone camera over WiFi (BEST FOR LIVE CLIENT DEMO)
+  #
+  # 1. Install on phone:
+  #      Android → "IP Webcam" by Pavel Khlebovich (Play Store, free)
+  #      iOS     → "Larix Broadcaster" (App Store, free)
+  # 2. Open the app, scroll to bottom, tap "Start server".
+  # 3. The app shows a URL like:  http://192.168.1.42:8080
+  #    The stream URL to use is:  http://192.168.1.42:8080/video
+  #    (iOS Larix shows you an RTSP URL: rtsp://192.168.1.42:1935/live)
+  # 4. Make sure your PC and phone are on the SAME WiFi.
+  # 5. Comment out OPTION A above and uncomment the block below.
+  # 6. Replace 192.168.1.42:8080 with YOUR phone's URL.
+  # 7. Restart the server (start.bat).
+  # ============================================================
+  # - id: "gate_cam"
+  #   name: "Main Gate (Phone)"
+  #   role: "gate"
+  #   uri: "http://192.168.1.42:8080/video"   # <-- PASTE YOUR PHONE URL HERE
+  #   fps_target: 8
+  #   direction_line_y: 0.55
+
+  # ============================================================
+  # OPTION C — Pre-recorded video file (most reliable fallback)
+  #
+  # 1. Drop your video into the folder:  data/demo/
+  #    e.g. data/demo/sample_gate.mp4
+  # 2. Comment OUT option A above, UNCOMMENT the block below.
+  # 3. Update the file name in `uri:` if yours is different.
+  # 4. Restart the server. The video auto-loops forever.
+  # ============================================================
+  # - id: "gate_cam"
+  #   name: "Main Gate (Demo)"
+  #   role: "gate"
+  #   uri: "data/demo/sample_gate.mp4"
+  #   fps_target: 8
+  #   direction_line_y: 0.55
+
+# ---------- Detection models ----------
+models:
+  vehicle_detector: "models/yolov8n.pt"          # auto-downloads on first run
+  plate_detector:   "models/license_plate.pt"   # see scripts/download_models.py
+  vehicle_classes: ["car", "motorcycle", "bus", "truck"]
+  asset_classes:   ["car", "truck", "bus", "motorcycle", "bicycle"]
+
+# ---------- Thresholds ----------
+thresholds:
+  vehicle_conf: 0.45
+  plate_conf:   0.35
+  ocr_conf:     0.40        # lowered: accept partial reads on webcam footage
+  min_plate_chars: 4
+  duplicate_window_sec: 30      # ignore same plate seen again within N sec
+
+# ---------- Gate control ----------
+gate:
+  driver: "simulated"           # simulated | gpio | http
+  open_duration_sec: 6
+  strict_whitelist: true        # true = unknown plates DENIED, false = guest mode
+  http:
+    open_url:  "http://192.168.1.50/gate/open"
+    close_url: "http://192.168.1.50/gate/close"
+
+# ---------- Storage ----------
+storage:
+  db_url: "sqlite:///data/yard_monitor.db"
+  snapshot_dir: "data/snapshots"
+  keep_snapshots_days: 30
+
+# ---------- Web dashboard ----------
+web:
+  host: "0.0.0.0"
+  port: 8000
+  admin_password: "admin123"    # CHANGE BEFORE SHOWING TO CLIENT

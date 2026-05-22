@@ -1,0 +1,26 @@
+services:
+  yard-monitor:
+    build: .
+    image: yard-monitor:latest
+    container_name: yard-monitor
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist database and snapshots across restarts
+      - ./data:/app/data
+      # Mount config read-only so you can edit it without rebuilding
+      - ./config.yaml:/app/config.yaml:ro
+    # Expose webcam / iVCam device to the container (Linux only).
+    # Comment out if running without a physical camera (use OPTION C video file).
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s     # give models time to load
