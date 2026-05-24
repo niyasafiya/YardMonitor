@@ -211,9 +211,12 @@ class PlateOCR:
         for p, c in candidates:
             len_stats.setdefault(len(p), []).append(c)
 
+        len_scores = {n: len(vs) * float(np.mean(vs)) for n, vs in len_stats.items()}
+        best_score = max(len_scores.values())
+        # OCR drops trailing characters; it never adds spurious ones.
+        # Among lengths whose score is ≥60 % of the best, prefer the longest.
         target_len = max(
-            len_stats,
-            key=lambda n: len(len_stats[n]) * float(np.mean(len_stats[n]))
+            n for n, s in len_scores.items() if s >= best_score * 0.60
         )
         matching = [(p, c) for p, c in candidates if len(p) == target_len]
 
@@ -305,11 +308,9 @@ class PlateOCR:
 
     _PLATE_CORE = re.compile(r'[A-Z]{2}\d{2}[A-Z]{1,3}\d{3,4}')
 
-    # OCR character-split recovery: some OCR engines segment ONE letter into
-    # TWO tokens when strokes are misdetected.
-    #   R → Y + 4  (R's loop ≈ Y, diagonal leg ≈ 4)
-    #   P → F + 7  (P's closed loop ≈ F, open bottom ≈ 7)
-    _CHAR_SPLIT: dict = {("Y", "4"): "R", ("F", "7"): "P"}
+    # PaddleOCR does not have EasyOCR's character-split artefacts (R→Y+4, P→F+7).
+    # Keeping the structure in case a future backend needs it; empty = no-op.
+    _CHAR_SPLIT: dict = {}
 
     @staticmethod
     def _postfix(plate: str) -> str:

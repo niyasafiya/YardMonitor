@@ -3,7 +3,7 @@ REM ============================================================
 REM Yard Monitor — Windows launcher
 REM   - activates the local venv
 REM   - starts the FastAPI server (cameras + dashboard)
-REM   - opens the dashboard in your default browser
+REM   - all output stays in this terminal window
 REM ============================================================
 
 setlocal
@@ -17,9 +17,9 @@ if not exist ".venv\Scripts\activate.bat" (
 
 call ".venv\Scripts\activate.bat"
 
-REM Open the dashboard ~3 seconds after the server starts
-start "" /b cmd /c "timeout /t 3 >nul && start http://localhost:8000"
-
-echo Starting Yard Monitor on http://localhost:8000
-echo Press Ctrl-C to stop.
+echo.
+echo  Yard Monitor
+echo  Dashboard: http://localhost:8000
+echo  Press Ctrl-C to stop.
+echo.
 python main.py
