@@ -274,25 +274,36 @@ def fuzzy_lookup_plate(plate: str, min_similarity: float = 0.60) -> Optional[dic
             select(AuthorizedVehicle).where(AuthorizedVehicle.active.is_(True))
         ).all()
 
-    matches: list[tuple[float, "AuthorizedVehicle"]] = []
+    # Use integer match counts to avoid floating-point comparison bugs.
+    scored: list[tuple[int, float, "AuthorizedVehicle"]] = []
+    n = len(norm_input)
     for v in rows:
         norm_wl = _normalize_plate(v.plate)
-        if len(norm_wl) != len(norm_input):
+        if len(norm_wl) != n:
             continue
         same = sum(a == b for a, b in zip(norm_input, norm_wl))
-        similarity = same / len(norm_input)
+        similarity = same / n
         if similarity >= min_similarity:
-            matches.append((similarity, v))
+            scored.append((same, similarity, v))
 
-    if len(matches) == 1:
-        sim, v = matches[0]
-        import logging as _log
-        _log.getLogger(__name__).info(
-            "Fuzzy plate match: OCR='%s' → whitelist='%s' (%.0f%% match)",
-            norm_input, v.plate, sim * 100,
-        )
-        return v.to_dict()
-    return None   # 0 matches or ambiguous
+    if not scored:
+        return None
+    scored.sort(key=lambda t: t[0], reverse=True)
+    best_same, best_sim, best_v = scored[0]
+
+    if len(scored) > 1:
+        second_same = scored[1][0]
+        # Require the winner to match at least 1 more character than the runner-up.
+        # Avoids returning a wrong plate when two whitelist entries are equally close.
+        if best_same <= second_same:
+            return None  # truly ambiguous — refuse to guess
+
+    import logging as _log
+    _log.getLogger(__name__).info(
+        "Fuzzy plate match: OCR='%s' → whitelist='%s' (%.0f%% match)",
+        norm_input, best_v.plate, best_sim * 100,
+    )
+    return best_v.to_dict()
 
 
 def add_event(**kwargs) -> dict:
@@ -387,14 +398,20 @@ def list_whitelist() -> list[dict]:
 def add_to_whitelist(plate: str, **fields) -> dict:
     plate = _normalize_plate(plate)   # strip spaces/hyphens, uppercase
     with session_scope() as s:
-        # Scan by normalized plate so legacy rows stored with spaces are found
         rows = s.scalars(select(AuthorizedVehicle)).all()
-        existing = next((v for v in rows if _normalize_plate(v.plate) == plate), None)
+        matches = [r for r in rows if _normalize_plate(r.plate) == plate]
+        # Prefer active row; fall back to most-recently-added inactive for reactivation
+        existing = (next((r for r in matches if r.active), None)
+                    or (max(matches, key=lambda r: r.id) if matches else None))
         if existing:
             for k, v in fields.items():
                 if v is not None:
                     setattr(existing, k, v)
             existing.active = True
+            # Deactivate any other duplicates
+            for dup in matches:
+                if dup is not existing:
+                    dup.active = False
             s.flush()
             return existing.to_dict()
         v = AuthorizedVehicle(plate=plate, **fields)
@@ -420,7 +437,9 @@ def update_whitelist(plate: str, **fields) -> Optional[dict]:
     plate = _normalize_plate(plate)
     with session_scope() as s:
         rows = s.scalars(select(AuthorizedVehicle)).all()
-        v = next((r for r in rows if _normalize_plate(r.plate) == plate), None)
+        matches = [r for r in rows if _normalize_plate(r.plate) == plate]
+        # Always update the active row
+        v = next((r for r in matches if r.active), None) or (matches[0] if matches else None)
         if not v:
             return None
         for k, val in fields.items():
