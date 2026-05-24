@@ -1,0 +1,6 @@
+path: C:\Users\Nihal Bin Riyas\OneDrive\Desktop\yard-monitor\data\plate_dataset
+train: images/train
+val:   images/valid
+nc: 1
+names:
+  0: license_plate

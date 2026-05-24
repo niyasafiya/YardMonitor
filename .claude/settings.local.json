@@ -7,7 +7,29 @@
       "Bash(curl -s -X DELETE http://localhost:8000/api/events/13 -H 'x-admin-token: admin123')",
       "Bash(curl -s \"http://localhost:8000/api/events?limit=2\")",
       "Bash(curl -s -I --max-time 2 http://localhost:8000/stream/gate_cam)",
-      "PowerShell(Get-NetTCPConnection *)"
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(python -)",
+      "Bash(python scripts/make_sample_video.py)",
+      "Bash(python main.py)",
+      "Bash(curl -s http://localhost:8000/api/stats)",
+      "Bash(curl -s \"http://localhost:8000/api/events?limit=10\")",
+      "Bash(python -c ' *)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(curl -s \"http://localhost:8000/api/events?limit=5\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/stream/gate_cam)",
+      "Bash(curl -s \"http://localhost:8000/api/events?limit=20\")",
+      "Bash(.venv\\\\Scripts\\\\python.exe -c \"import ast; ast.parse\\(open\\('scripts/train_plate_detector.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
+      "PowerShell($proc = Start-Process -FilePath \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\\\\.venv\\\\Scripts\\\\python.exe\" -ArgumentList \"main.py\" -WorkingDirectory \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\" -RedirectStandardOutput \"ym_out.log\" -RedirectStandardError \"ym_err.log\" -PassThru -NoNewWindow; Write-Host \"PID: $\\($proc.Id\\)\")",
+      "PowerShell($env:YM_USE_GPU = \"1\"; $proc = Start-Process -FilePath \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\\\\.venv\\\\Scripts\\\\python.exe\" -ArgumentList \"main.py\" -WorkingDirectory \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\" -Environment @{YM_USE_GPU=\"1\"; PATH=$env:PATH} -RedirectStandardOutput \"ym_out.log\" -RedirectStandardError \"ym_err.log\" -PassThru -NoNewWindow; Write-Host \"PID: $\\($proc.Id\\)\")",
+      "PowerShell($env:YM_USE_GPU = \"1\"; $proc = Start-Process -FilePath \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\\\\.venv\\\\Scripts\\\\python.exe\" -ArgumentList \"main.py\" -WorkingDirectory \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\" -RedirectStandardOutput \"ym_out.log\" -RedirectStandardError \"ym_err.log\" -PassThru -NoNewWindow; Write-Host \"PID: $\\($proc.Id\\)\")",
+      "Read(//mnt/c/Users/Nihal Bin Riyas/OneDrive/Desktop/yard-monitor/**)",
+      "PowerShell(Get-Process *)",
+      "PowerShell($env:YM_USE_GPU = \"1\"; $env:YM_DEBUG_CROPS = \"0\"; Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c\", \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\\\\start_debug.bat\" -WindowStyle Normal -PassThru | Select-Object Id)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Server UP:', d\\)\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Nihal Bin Riyas\\\\OneDrive\\\\Desktop\\\\yard-monitor\"; $env:YM_USE_GPU = \"1\"; $env:YM_DEBUG_CROPS = \"0\"; & \".venv\\\\Scripts\\\\python.exe\" -m uvicorn api.main:app --host 0.0.0.0 --port 8000 2>&1 | Select-Object -First 30)"
     ]
   }
 }

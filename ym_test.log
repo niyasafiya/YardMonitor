@@ -1,7 +1,66 @@
-INFO:     Started server process [14920]
+INFO:     Started server process [19144]
 INFO:     Waiting for application startup.
-2026-05-21 18:09:05,914 [INFO] core.pipeline: Loading models...
+2026-05-22 17:01:18,027 [INFO] core.pipeline: Loading models...
 INFO:     Application startup complete.
-ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8000): only one usage of each socket address (protocol/network address/port) is normally permitted
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-05-22 17:01:24,642 [INFO] core.detector: Loaded vehicle detector: models/yolov8n.pt
+2026-05-22 17:01:24,712 [INFO] core.detector: Loaded plate detector: models/license_plate.pt
+INFO:     127.0.0.1:55204 - "GET /api/stats HTTP/1.1" 200 OK
+2026-05-22 17:01:31,061 [INFO] core.ocr: EasyOCR ready (gpu=False)
+2026-05-22 17:01:31,062 [INFO] core.pipeline: Camera gate_cam starting on data/sample_gate.mp4
+2026-05-22 17:01:31,062 [INFO] core.pipeline: Started pipeline for camera gate_cam
+2026-05-22 17:01:31,090 [INFO] core.pipeline: Camera gate_cam: source opened successfully
+2026-05-22 17:01:31,450 [INFO] core.gate_controller: Gate controller ready — driver=simulated, strict=True
+INFO:     127.0.0.1:63064 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57220 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 63238) - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58961 - "GET /stream/gate_cam HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57220 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63064 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63064 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63064 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63064 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63064 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63064 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59860 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49529 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49531 - "GET /api/events?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49529 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52591 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52154 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52154 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53046 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53046 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58572 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58572 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58572 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58572 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58572 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58572 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49264 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49264 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56187 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56189 - "GET /stream/gate_cam HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56192 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54784 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54784 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61359 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61359 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51651 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51651 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51941 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51941 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52098 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52098 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57914 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57914 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58340 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58340 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51845 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51845 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55588 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55588 - "GET /api/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50411 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62417 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56691 - "POST /api/demo/start HTTP/1.1" 404 Not Found
