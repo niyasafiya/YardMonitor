@@ -14,8 +14,10 @@ from typing import Optional
 from fastapi import (
     Depends,
     FastAPI,
+    File,
     HTTPException,
     Request,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -96,7 +98,8 @@ async def lifespan(app: FastAPI):
 
     global manager
     manager = PipelineManager(
-        on_event=lambda ev: bus.publish_threadsafe({"type": "event", "data": ev})
+        on_event=lambda ev: bus.publish_threadsafe({"type": "event",         "data": ev}),
+        on_update=lambda ev: bus.publish_threadsafe({"type": "event_updated", "data": ev}),
     )
 
     # Start pipelines in a background thread — model loading takes time
@@ -131,6 +134,14 @@ app.add_middleware(
 
 class WhitelistAddRequest(BaseModel):
     plate: str
+    owner_name: Optional[str] = None
+    owner_phone: Optional[str] = None
+    vehicle_type: Optional[str] = None
+    company: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class WhitelistUpdateRequest(BaseModel):
     owner_name: Optional[str] = None
     owner_phone: Optional[str] = None
     vehicle_type: Optional[str] = None
@@ -230,6 +241,23 @@ def add_whitelist(req: WhitelistAddRequest):
     return rec
 
 
+@app.put("/api/whitelist/{plate}", dependencies=[Depends(_check_auth)])
+def update_whitelist(plate: str, req: WhitelistUpdateRequest):
+    rec = db.update_whitelist(
+        plate=plate,
+        owner_name=req.owner_name,
+        owner_phone=req.owner_phone,
+        vehicle_type=req.vehicle_type,
+        company=req.company,
+        notes=req.notes,
+    )
+    if not rec:
+        raise HTTPException(404, "Plate not found")
+    db.audit("whitelist_edit", actor="admin", plate=plate)
+    bus.publish_threadsafe({"type": "whitelist_update", "data": rec})
+    return rec
+
+
 @app.delete("/api/whitelist/{plate}", dependencies=[Depends(_check_auth)])
 def del_whitelist(plate: str):
     ok = db.remove_from_whitelist(plate)
@@ -278,6 +306,55 @@ def gate_close():
 @app.get("/api/gate/status")
 def gate_status():
     return {"is_open": get_gate().is_open}
+
+
+# ----------------------------------------------------------------------------
+# Demo mode — upload a video file and run it through the pipeline
+# ----------------------------------------------------------------------------
+
+DEMO_VIDEO = DATA_DIR / "demo" / "uploaded_demo.mp4"
+
+
+@app.post("/api/demo/upload", dependencies=[Depends(_check_auth)])
+async def demo_upload(file: UploadFile = File(...)):
+    """Receive a video file and save it as the demo source."""
+    DEMO_VIDEO.parent.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Uploaded file is empty")
+    with open(DEMO_VIDEO, "wb") as f:
+        f.write(content)
+    size_mb = round(len(content) / 1_048_576, 1)
+    log.info("Demo video saved: %s (%.1f MB)", DEMO_VIDEO, size_mb)
+    return {"ok": True, "filename": file.filename, "size_mb": size_mb}
+
+
+@app.post("/api/demo/start", dependencies=[Depends(_check_auth)])
+def demo_start():
+    """Start (or restart) the demo pipeline with the uploaded video."""
+    if manager is None:
+        raise HTTPException(503, "Pipeline not ready — models still loading")
+    if not DEMO_VIDEO.exists():
+        raise HTTPException(404, "No demo video found. Upload one first via /api/demo/upload")
+    cam_id = manager.start_demo(str(DEMO_VIDEO))
+    bus.publish_threadsafe({
+        "type": "cameras_updated",
+        "data": {"cameras": manager.cameras()},
+    })
+    return {"ok": True, "camera_id": cam_id}
+
+
+@app.delete("/api/demo/stop", dependencies=[Depends(_check_auth)])
+def demo_stop():
+    """Stop the demo pipeline."""
+    if manager is None:
+        raise HTTPException(503, "Pipeline not ready")
+    ok = manager.stop_demo()
+    bus.publish_threadsafe({
+        "type": "cameras_updated",
+        "data": {"cameras": manager.cameras()},
+    })
+    return {"ok": ok}
 
 
 # ----------------------------------------------------------------------------

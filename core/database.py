@@ -12,6 +12,7 @@ audit_log           free-form audit trail (gate opens, manual overrides, ...)
 from __future__ import annotations
 
 import json
+import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -219,24 +220,96 @@ def session_scope() -> Iterator[Session]:
 # Convenience helpers
 # ----------------------------------------------------------------------------
 
+def _normalize_plate(plate: str) -> str:
+    """Strip spaces, hyphens and any non-alphanumeric chars; uppercase.
+
+    Indian plates are often typed with spaces ("KL 46 Z3999") but OCR never
+    outputs spaces, so comparison must use the stripped form for both sides.
+    """
+    return re.sub(r'[^A-Z0-9]', '', plate.upper())
+
+
 def lookup_plate(plate: str) -> Optional[dict]:
-    """Return whitelist record for a plate, or None."""
+    """Return whitelist record for a plate, or None.
+
+    Normalizes both the query and stored plates so that an entry saved as
+    "KL 46 Z3999" (with spaces) matches OCR output "KL46Z3999".
+    """
     if not plate:
         return None
+    normalized = _normalize_plate(plate)
+    if not normalized:
+        return None
     with session_scope() as s:
-        v = s.scalar(
-            select(AuthorizedVehicle).where(
-                AuthorizedVehicle.plate == plate.upper(),
-                AuthorizedVehicle.active.is_(True),
-            )
+        rows = s.scalars(
+            select(AuthorizedVehicle).where(AuthorizedVehicle.active.is_(True))
+        ).all()
+        for v in rows:
+            if _normalize_plate(v.plate) == normalized:
+                return v.to_dict()
+    return None
+
+
+def fuzzy_lookup_plate(plate: str, min_similarity: float = 0.60) -> Optional[dict]:
+    """
+    OCR error recovery: find a whitelist plate whose characters match `plate`
+    at the same positions with at least `min_similarity` (0–1) accuracy.
+
+    Both the OCR result and stored plates are normalized (spaces/hyphens
+    stripped) before comparison so that "KL 46 Z3999" matches "KL46Z3999".
+
+    Only returns a result when exactly ONE whitelist entry matches — ambiguous
+    hits are discarded to avoid false authorisations.
+
+    Example: OCR reads "CK26Z3999", whitelist has "KL46Z3999".
+      Positional matches: pos3,4,5,6,7,8 → 6/9 = 0.67 ≥ 0.60 → match returned.
+    """
+    if not plate or len(plate) < 5:
+        return None
+    norm_input = _normalize_plate(plate)
+    if len(norm_input) < 5:
+        return None
+    with session_scope() as s:
+        rows = s.scalars(
+            select(AuthorizedVehicle).where(AuthorizedVehicle.active.is_(True))
+        ).all()
+
+    matches: list[tuple[float, "AuthorizedVehicle"]] = []
+    for v in rows:
+        norm_wl = _normalize_plate(v.plate)
+        if len(norm_wl) != len(norm_input):
+            continue
+        same = sum(a == b for a, b in zip(norm_input, norm_wl))
+        similarity = same / len(norm_input)
+        if similarity >= min_similarity:
+            matches.append((similarity, v))
+
+    if len(matches) == 1:
+        sim, v = matches[0]
+        import logging as _log
+        _log.getLogger(__name__).info(
+            "Fuzzy plate match: OCR='%s' → whitelist='%s' (%.0f%% match)",
+            norm_input, v.plate, sim * 100,
         )
-        return v.to_dict() if v else None
+        return v.to_dict()
+    return None   # 0 matches or ambiguous
 
 
 def add_event(**kwargs) -> dict:
     with session_scope() as s:
         ev = VehicleEvent(**kwargs)
         s.add(ev)
+        s.flush()
+        return ev.to_dict()
+
+
+def update_event(event_id: int, **fields) -> Optional[dict]:
+    with session_scope() as s:
+        ev = s.scalar(select(VehicleEvent).where(VehicleEvent.id == event_id))
+        if not ev:
+            return None
+        for k, v in fields.items():
+            setattr(ev, k, v)
         s.flush()
         return ev.to_dict()
 
@@ -303,14 +376,20 @@ def list_assets(present_only: bool = False) -> list[dict]:
 
 def list_whitelist() -> list[dict]:
     with session_scope() as s:
-        rows = s.scalars(select(AuthorizedVehicle).order_by(AuthorizedVehicle.plate)).all()
+        rows = s.scalars(
+            select(AuthorizedVehicle)
+            .where(AuthorizedVehicle.active.is_(True))
+            .order_by(AuthorizedVehicle.plate)
+        ).all()
         return [r.to_dict() for r in rows]
 
 
 def add_to_whitelist(plate: str, **fields) -> dict:
-    plate = plate.strip().upper()
+    plate = _normalize_plate(plate)   # strip spaces/hyphens, uppercase
     with session_scope() as s:
-        existing = s.scalar(select(AuthorizedVehicle).where(AuthorizedVehicle.plate == plate))
+        # Scan by normalized plate so legacy rows stored with spaces are found
+        rows = s.scalars(select(AuthorizedVehicle)).all()
+        existing = next((v for v in rows if _normalize_plate(v.plate) == plate), None)
         if existing:
             for k, v in fields.items():
                 if v is not None:
@@ -325,13 +404,30 @@ def add_to_whitelist(plate: str, **fields) -> dict:
 
 
 def remove_from_whitelist(plate: str) -> bool:
-    plate = plate.strip().upper()
+    plate = _normalize_plate(plate)
     with session_scope() as s:
-        v = s.scalar(select(AuthorizedVehicle).where(AuthorizedVehicle.plate == plate))
-        if not v:
+        rows = s.scalars(select(AuthorizedVehicle)).all()
+        matches = [r for r in rows if _normalize_plate(r.plate) == plate]
+        if not matches:
             return False
-        v.active = False
+        for v in matches:
+            v.active = False
+        s.flush()
         return True
+
+
+def update_whitelist(plate: str, **fields) -> Optional[dict]:
+    plate = _normalize_plate(plate)
+    with session_scope() as s:
+        rows = s.scalars(select(AuthorizedVehicle)).all()
+        v = next((r for r in rows if _normalize_plate(r.plate) == plate), None)
+        if not v:
+            return None
+        for k, val in fields.items():
+            if hasattr(v, k):
+                setattr(v, k, val)
+        s.flush()
+        return v.to_dict()
 
 
 def audit(action: str, actor: str = "system", **payload):
@@ -364,6 +460,7 @@ def stats_today() -> dict:
         denied = s.scalar(select(func.count(VehicleEvent.id)).where(
             VehicleEvent.timestamp >= today_start,
             VehicleEvent.authorized.is_(False),
+            VehicleEvent.plate.isnot(None),
         )) or 0
         whitelist_size = s.scalar(select(func.count(AuthorizedVehicle.id)).where(
             AuthorizedVehicle.active.is_(True))) or 0

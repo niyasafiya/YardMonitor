@@ -18,10 +18,10 @@ sources:
   # OPTION A — Laptop / USB webcam (default, works out of the box)
   # ============================================================
   - id: "gate_cam"
-    name: "Main Gate"
+    name: "Main Gate (Demo)"
     role: "gate"
-    uri: 1                        # 0 = built-in webcam, 1 = iVCam (phone)
-    fps_target: 5
+    uri: "data/sample_gate.mp4"   # demo video — swap to 0/1 for live camera
+    fps_target: 8
     direction_line_y: 0.55
 
   # ============================================================
@@ -63,9 +63,13 @@ sources:
   #   direction_line_y: 0.55
 
 # ---------- Detection models ----------
+# Use .pt for maximum compatibility (default).
+# Switch to .onnx for 2-3x faster inference after running:
+#   pip install onnxruntime-gpu==1.16.3   (CUDA 11.x, e.g. MX330)
+#   python scripts/export_to_onnx.py
 models:
-  vehicle_detector: "models/yolov8n.pt"          # auto-downloads on first run
-  plate_detector:   "models/license_plate.pt"   # see scripts/download_models.py
+  vehicle_detector: "models/yolov8n.pt"            # PyTorch GPU — needed for ByteTrack
+  plate_detector:   "models/license_plate.onnx"   # ONNX CPU direct — ~2x faster than .pt
   vehicle_classes: ["car", "motorcycle", "bus", "truck"]
   asset_classes:   ["car", "truck", "bus", "motorcycle", "bicycle"]
 
@@ -74,8 +78,12 @@ thresholds:
   vehicle_conf: 0.45
   plate_conf:   0.35
   ocr_conf:     0.40        # lowered: accept partial reads on webcam footage
-  min_plate_chars: 4
+  min_plate_chars: 6
   duplicate_window_sec: 30      # ignore same plate seen again within N sec
+  plate_fuzzy_similarity: 0.60  # fuzzy whitelist match: fraction of same-position
+                                # chars that must agree (0.60 = 5/9 for 9-char plates)
+                                # raise to 0.78 for stricter matching, lower toward
+                                # 0.55 if OCR errors are severe (more than 3 chars wrong)
 
 # ---------- Gate control ----------
 gate:

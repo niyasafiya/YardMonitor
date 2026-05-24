@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css" />
+<link rel="stylesheet" href="/static/style.css?v=2" />
 </head>
 <body>
 
@@ -77,8 +77,20 @@
   <section class="card cameras">
     <header>
       <h2>Live Cameras</h2>
-      <span class="muted small" id="cam-meta">—</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="muted small" id="cam-meta">—</span>
+        <button id="btn-demo" class="btn ghost small">Demo Mode</button>
+        <input type="file" id="demo-file" accept="video/mp4,video/avi,video/mov,video/*"
+               style="position:fixed;top:-200px;left:-200px;opacity:0;pointer-events:none;" />
+      </div>
     </header>
+    <!-- Upload progress bar (hidden by default) -->
+    <div id="demo-progress-wrap" style="display:none;padding:6px 0 2px;">
+      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;" id="demo-progress-label">Uploading…</div>
+      <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
+        <div id="demo-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s;"></div>
+      </div>
+    </div>
     <div id="camera-list" class="camera-grid">
       <div class="placeholder">Connecting to cameras…</div>
     </div>
@@ -181,6 +193,6 @@
 <!-- ===================== Toast stack ===================== -->
 <div id="toasts" class="toast-stack" aria-live="polite"></div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

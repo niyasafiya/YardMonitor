@@ -115,6 +115,9 @@ function handleMessage(msg) {
     setGateStatus(d.gate_open);
     refreshWhitelist();
     refreshStats();
+    // Restore demo button state if the backend is already running a demo pipeline
+    const demoRunning = state.cameras.some(c => c.id === "demo_cam");
+    if (demoRunning !== _demoActive) setDemoState(demoRunning);
     return;
   }
   if (msg.type === "event") {
@@ -132,6 +135,23 @@ function handleMessage(msg) {
   if (msg.type === "camera_source") {
     camSources[msg.data?.id] = msg.data?.uri;
     renderCameras();
+    return;
+  }
+  if (msg.type === "cameras_updated") {
+    if (msg.data?.cameras) state.cameras = msg.data.cameras;
+    renderCameras();
+    // Keep demo button in sync when cameras change server-side
+    const demoRunning = state.cameras.some(c => c.id === "demo_cam");
+    if (demoRunning !== _demoActive) setDemoState(demoRunning);
+    return;
+  }
+  if (msg.type === "event_updated") {
+    const idx = state.events.findIndex(e => e.id === msg.data?.id);
+    if (idx !== -1) {
+      state.events[idx] = { ...state.events[idx], ...msg.data };
+      renderEvents();
+      refreshStats();
+    }
     return;
   }
   if (msg.type === "event_deleted") {
@@ -371,31 +391,70 @@ function renderWhitelist() {
             <td>${escapeHtml(v.owner_name || "")}<br><span class="muted small">${escapeHtml(v.owner_phone || "")}</span></td>
             <td>${escapeHtml(v.vehicle_type || "—")}</td>
             <td>${escapeHtml(v.company || "—")}</td>
-            <td><button class="btn ghost small" data-rm="${escapeHtml(v.plate)}">Remove</button></td>
+            <td style="display:flex;gap:4px;">
+              <button class="btn ghost small" data-edit="${escapeHtml(v.plate)}">Edit</button>
+              <button class="btn ghost small" data-rm="${escapeHtml(v.plate)}">Remove</button>
+            </td>
           </tr>`).join("")}
       </tbody>
     </table>`;
+  $$("button[data-edit]").forEach(b => b.addEventListener("click", () => {
+    const v = state.whitelist.find(x => x.plate === b.dataset.edit);
+    if (v) openModalEdit(v);
+  }));
   $$("button[data-rm]").forEach(b => b.addEventListener("click", async () => {
-    if (!confirm(`Remove ${b.dataset.rm} from whitelist?`)) return;
+    const plate = b.dataset.rm;
+    if (!confirm(`Remove ${plate} from whitelist?`)) return;
+    // Optimistically remove from UI right away
+    state.whitelist = state.whitelist.filter(x => x.plate !== plate);
+    renderWhitelist();
     try {
-      await api(`/api/whitelist/${encodeURIComponent(b.dataset.rm)}`, { method: "DELETE" });
-      toast({type:"ok", title:"Removed", body:`<code>${escapeHtml(b.dataset.rm)}</code> is no longer authorized.`});
-      refreshWhitelist();
+      await api(`/api/whitelist/${encodeURIComponent(plate)}`, { method: "DELETE" });
+      toast({type:"ok", title:"Removed", body:`<code>${escapeHtml(plate)}</code> is no longer authorized.`});
+      refreshStats();
     } catch (e) {
+      // Revert: reload from server
+      refreshWhitelist();
       toast({type:"deny", title:"Couldn't remove", body: escapeHtml(e.message)});
     }
   }));
 }
 
 // ============================ Add-whitelist modal ============================
+let _editingPlate = null;
+
 function openModal() {
+  _editingPlate = null;
+  $("#wl-title").textContent = "Authorize a vehicle";
+  $("#wl-plate").readOnly = false;
+  $("#wl-save").textContent = "Save vehicle";
   $("#wl-modal").hidden = false;
   $("#wl-err").hidden = true;
   setTimeout(() => $("#wl-plate").focus(), 50);
 }
+
+function openModalEdit(v) {
+  _editingPlate = v.plate;
+  $("#wl-title").textContent = "Edit vehicle";
+  $("#wl-plate").value = v.plate;
+  $("#wl-plate").readOnly = true;
+  $("#wl-type").value    = v.vehicle_type  || "";
+  $("#wl-owner").value   = v.owner_name    || "";
+  $("#wl-phone").value   = v.owner_phone   || "";
+  $("#wl-company").value = v.company       || "";
+  $("#wl-notes").value   = v.notes         || "";
+  $("#wl-save").textContent = "Update vehicle";
+  $("#wl-err").hidden = true;
+  $("#wl-modal").hidden = false;
+  setTimeout(() => $("#wl-owner").focus(), 50);
+}
+
 function closeModal() {
+  _editingPlate = null;
   $("#wl-modal").hidden = true;
   $("#wl-err").hidden = true;
+  $("#wl-title").textContent = "Authorize a vehicle";
+  $("#wl-plate").readOnly = false;
   $$("#wl-modal input, #wl-modal textarea, #wl-modal select").forEach(i => i.value = "");
   $("#wl-save").disabled = false;
   $("#wl-save").textContent = "Save vehicle";
@@ -430,27 +489,36 @@ $("#wl-save").addEventListener("click", async () => {
   saveBtn.disabled = true;
   saveBtn.innerHTML = '<span class="spinner"></span> Saving…';
   $("#wl-err").hidden = true;
+  const body = {
+    owner_name:   $("#wl-owner").value.trim()   || null,
+    owner_phone:  $("#wl-phone").value.trim()   || null,
+    vehicle_type: $("#wl-type").value           || null,
+    company:      $("#wl-company").value.trim() || null,
+    notes:        $("#wl-notes").value.trim()   || null,
+  };
   try {
-    await api("/api/whitelist", {
-      method: "POST",
-      body: JSON.stringify({
-        plate,
-        owner_name:   $("#wl-owner").value.trim()   || null,
-        owner_phone:  $("#wl-phone").value.trim()   || null,
-        vehicle_type: $("#wl-type").value           || null,
-        company:      $("#wl-company").value.trim() || null,
-        notes:        $("#wl-notes").value.trim()   || null,
-      }),
-    });
-    closeModal();
-    toast({type:"ok", title:"Vehicle authorized", body:`<code>${escapeHtml(plate)}</code> can now open the gate.`});
+    if (_editingPlate) {
+      await api(`/api/whitelist/${encodeURIComponent(_editingPlate)}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      closeModal();
+      toast({type:"ok", title:"Vehicle updated", body:`<code>${escapeHtml(plate)}</code> details saved.`});
+    } else {
+      await api("/api/whitelist", {
+        method: "POST",
+        body: JSON.stringify({ plate, ...body }),
+      });
+      closeModal();
+      toast({type:"ok", title:"Vehicle authorized", body:`<code>${escapeHtml(plate)}</code> can now open the gate.`});
+    }
     refreshWhitelist();
     refreshStats();
   } catch (e) {
     $("#wl-err").textContent = e.message || "Save failed.";
     $("#wl-err").hidden = false;
     saveBtn.disabled = false;
-    saveBtn.textContent = "Save vehicle";
+    saveBtn.textContent = _editingPlate ? "Update vehicle" : "Save vehicle";
   }
 });
 
@@ -523,6 +591,99 @@ function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// ============================ Demo Mode ============================
+let _demoActive = false;
+
+function setDemoState(active) {
+  _demoActive = active;
+  const btn = $("#btn-demo");
+  if (active) {
+    btn.textContent = "Stop Demo";
+    btn.classList.remove("ghost");
+    btn.classList.add("deny");
+  } else {
+    btn.textContent = "Demo Mode";
+    btn.classList.remove("deny");
+    btn.classList.add("ghost");
+  }
+}
+
+$("#btn-demo").addEventListener("click", () => {
+  if (_demoActive) {
+    stopDemo();
+  } else {
+    $("#demo-file").click();   // open file picker
+  }
+});
+
+$("#demo-file").addEventListener("change", async () => {
+  const file = $("#demo-file").files[0];
+  $("#demo-file").value = "";   // reset so same file can be re-picked
+  if (!file) return;
+
+  const btn          = $("#btn-demo");
+  const progressWrap = $("#demo-progress-wrap");
+  const progressBar  = $("#demo-progress-bar");
+  const progressLbl  = $("#demo-progress-label");
+
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+  progressWrap.style.display = "block";
+  progressLbl.textContent = `Uploading ${file.name}…`;
+  progressBar.style.width = "0%";
+
+  try {
+    // Upload with XHR so we can show progress
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/demo/upload");
+      xhr.setRequestHeader("x-admin-token", state.token);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          progressBar.style.width = ((e.loaded / e.total) * 100).toFixed(1) + "%";
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status === 200 || xhr.status === 201) resolve(JSON.parse(xhr.responseText));
+        else reject(new Error(JSON.parse(xhr.responseText)?.detail || `Upload failed (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      const fd = new FormData();
+      fd.append("file", file);
+      xhr.send(fd);
+    });
+
+    progressBar.style.width = "100%";
+    progressLbl.textContent = "Starting demo pipeline…";
+
+    await api("/api/demo/start", { method: "POST" });
+
+    setDemoState(true);
+    toast({ type: "ok", title: "Demo started", body: `Playing ${escapeHtml(file.name)}` });
+  } catch (e) {
+    toast({ type: "deny", title: "Demo failed", body: escapeHtml(e.message) });
+    btn.textContent = "Demo Mode";
+  } finally {
+    btn.disabled = false;
+    progressWrap.style.display = "none";
+    progressBar.style.width = "0%";
+  }
+});
+
+async function stopDemo() {
+  const btn = $("#btn-demo");
+  btn.disabled = true;
+  try {
+    await api("/api/demo/stop", { method: "DELETE" });
+    setDemoState(false);
+    toast({ type: "warn", title: "Demo stopped" });
+  } catch (e) {
+    toast({ type: "deny", title: "Stop failed", body: escapeHtml(e.message) });
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ============================ Init ============================

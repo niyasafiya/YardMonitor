@@ -7,8 +7,20 @@ lapx>=0.5.2                  # required by ultralytics ByteTrack/BoT-SORT tracke
 opencv-python==4.10.0.84
 numpy==1.26.4
 Pillow==10.4.0
-easyocr==1.7.2               # License plate OCR (also pulls torch)
-torch>=2.2.0                 # Backend for YOLO + EasyOCR; pip will pick CPU/GPU wheel
+paddlepaddle==2.6.2          # PaddleOCR backend (CPU); for CUDA use paddlepaddle-gpu==2.6.2
+paddleocr==2.7.3             # PP-OCRv4 license plate recognition (~4-6x faster than EasyOCR)
+torch>=2.2.0                 # Backend for YOLO; pip will pick CPU/GPU wheel
+
+# ONNX Runtime — pick ONE line matching your CUDA version, then run:
+#   python scripts/export_to_onnx.py
+#   and update config.yaml model paths to .onnx
+#
+# CUDA 11.x (MX330 with driver ≤ 11.8):
+onnxruntime-gpu==1.16.3
+# CUDA 12.x (newer drivers):
+# onnxruntime-gpu>=1.17.0
+# CPU only (no GPU acceleration for ONNX):
+# onnxruntime>=1.16.0
 
 # Web backend
 fastapi==0.115.5
@@ -22,6 +34,10 @@ pydantic==2.9.2
 PyYAML==6.0.2
 python-dateutil==2.9.0
 SQLAlchemy==2.0.36
+
+# Training (optional — only needed when running scripts/train_plate_detector.py)
+huggingface_hub>=0.20.0    # HuggingFace Hub download (no account required; auto-installed with ultralytics)
+# roboflow>=1.1.0           # uncomment if using --source roboflow
 
 # Dev
 pytest==8.3.3

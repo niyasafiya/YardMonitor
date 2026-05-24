@@ -63,13 +63,18 @@ class _TrackState:
     best_crop:       Optional[Any] = field(default=None, repr=False)
     best_crop_sharp: float = 0.0
 
+    # Set once a crossing event is written to the DB — used to patch it later
+    # if OCR improves or authorization changes after the line crossing.
+    event_id:         Optional[int]  = None
+    event_authorized: Optional[bool] = None
+
 
 class CameraPipeline(threading.Thread):
     """One camera = one thread = one pipeline."""
 
-    _OCR_INTERVAL   = 0.8   # min seconds between OCR submits per vehicle
+    _OCR_INTERVAL   = 0.5   # min seconds between OCR submits per vehicle
     _YOLO_MAX_WIDTH = 320   # resize frame before YOLO; 320 matches imgsz so no internal upscale
-    _SHARP_THRESH   = 25.0  # Laplacian variance — lower for 320px webcam crops
+    _SHARP_THRESH   = 12.0  # Laplacian variance — lowered to allow slightly blurry crops through
 
     # Shared single-worker thread pool for OCR across all pipelines.
     # One worker = no GPU/memory contention; OCR is serial by nature.
@@ -89,7 +94,8 @@ class CameraPipeline(threading.Thread):
                  detector: Detector,
                  ocr: PlateOCR,
                  on_event: Optional[EventCallback] = None,
-                 on_frame: Optional[Callable[[str, np.ndarray], None]] = None):
+                 on_frame: Optional[Callable[[str, np.ndarray], None]] = None,
+                 on_update: Optional[EventCallback] = None):
         super().__init__(daemon=True, name=f"cam-{source_cfg['id']}")
         self.cfg = source_cfg
         self.id: str = source_cfg["id"]
@@ -103,6 +109,7 @@ class CameraPipeline(threading.Thread):
         self.ocr = ocr
         self.on_event = on_event
         self.on_frame = on_frame
+        self.on_update = on_update
 
         self.stopping = threading.Event()
         self._tracks: dict[int, _TrackState] = {}
@@ -300,6 +307,10 @@ class CameraPipeline(threading.Thread):
                     st.best_plate = plate
                     st.best_conf  = conf
                     log.debug("OCR result for track %s: %s (%.2f)", tid, plate, conf)
+                    # If the crossing event was already logged, update it with the
+                    # improved plate read so the dashboard log stays accurate.
+                    if st.event_id is not None:
+                        self._patch_logged_event(st)
             except Exception as exc:
                 log.debug("OCR future error: %s", exc)
             finally:
@@ -339,6 +350,21 @@ class CameraPipeline(threading.Thread):
         )
         if _should_decide:
             owner = db.lookup_plate(st.best_plate)
+
+            # Fuzzy fallback: OCR sometimes swaps visually-similar chars
+            # (K↔C, L↔K, 4↔2). If no exact match, check whether the read
+            # plate is ≥65% positional-character match to a whitelist plate.
+            # Only fires when confidence is reasonable and the match is unambiguous.
+            if owner is None and st.best_conf >= 0.30:
+                min_sim = float(config.get("thresholds", "plate_fuzzy_similarity",
+                                           default=0.60))
+                fuzzy_owner = db.fuzzy_lookup_plate(st.best_plate, min_similarity=min_sim)
+                if fuzzy_owner:
+                    log.info("OCR corrected by fuzzy match: '%s' → '%s'",
+                             st.best_plate, fuzzy_owner["plate"])
+                    st.best_plate = fuzzy_owner["plate"]   # use the authoritative plate
+                    owner = fuzzy_owner
+
             if owner:
                 st.authorized = True
                 st.owner = owner
@@ -359,6 +385,11 @@ class CameraPipeline(threading.Thread):
                 st.authorized = False
                 st.decided_at = time.time()
                 st.decided_conf = st.best_conf
+
+            # If the crossing event was already logged with a different outcome,
+            # patch it now so the dashboard reflects the correct decision.
+            if st.event_id is not None and st.authorized != st.event_authorized:
+                self._patch_logged_event(st)
 
         cy = det.center[1]
         crossed_down = st.last_y < line_y <= cy        # entry
@@ -381,20 +412,145 @@ class CameraPipeline(threading.Thread):
             return None
         veh_crop  = frame[y1:y2, x1:x2]
         plate_box = self.detector.find_plate(veh_crop)
-        if plate_box is None:
-            return None
-        px1, py1, px2, py2 = plate_box
-        px1 = max(0, px1);  py1 = max(0, py1)
-        px2 = min(veh_crop.shape[1], px2); py2 = min(veh_crop.shape[0], py2)
-        if px2 - px1 < 10 or py2 - py1 < 5:
-            return None
-        return veh_crop[py1:py2, px1:px2]
+        if plate_box is not None:
+            px1, py1, px2, py2 = plate_box
+            # Add margin so edge characters aren't clipped by a tight detector box
+            mx = max(6, int((px2 - px1) * 0.06))
+            my = max(4, int((py2 - py1) * 0.10))
+            px1 = max(0, px1 - mx);  py1 = max(0, py1 - my)
+            px2 = min(veh_crop.shape[1], px2 + mx)
+            py2 = min(veh_crop.shape[0], py2 + my)
+            box_w = px2 - px1
+            box_h = py2 - py1
+            # A real plate is always wider than tall (≥2:1 ratio). A nearly-square
+            # or tall box means the detector found a sub-region — discard it and
+            # fall through to the bottom-strip fallback below.
+            if box_w >= 20 and box_h >= 5 and box_w >= 2.0 * box_h:
+                return CameraPipeline._dewarp_plate(veh_crop[py1:py2, px1:px2])
+
+        # Plate detector missed or returned a bad box — fall back to the bottom
+        # 30% of the vehicle crop (where license plates always sit).
+        # Use center 85% width to avoid vehicle side edges.
+        vh, vw = veh_crop.shape[:2]
+        fx1 = int(vw * 0.075)
+        fx2 = int(vw * 0.925)
+        fallback = veh_crop[int(vh * 0.70):, fx1:fx2]
+        if fallback.shape[0] >= 8 and fallback.shape[1] >= 30:
+            return CameraPipeline._dewarp_plate(fallback)
+        return None
 
     @staticmethod
     def _is_sharp_enough(crop: np.ndarray) -> bool:
         """Reject blurry/empty crops before sending to OCR (fast Laplacian check)."""
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
         return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= CameraPipeline._SHARP_THRESH
+
+    @staticmethod
+    def _dewarp_plate(crop: np.ndarray) -> np.ndarray:
+        """Perspective-dewarp a plate crop to a flat rectangle.
+
+        Finds the plate quadrilateral via edge detection + contour analysis and
+        applies a 4-point perspective transform.  Falls back to the original crop
+        if a clean 4-corner polygon cannot be found — never makes things worse.
+        """
+        h, w = crop.shape[:2]
+        if w < 40 or h < 8:
+            return crop
+
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop.copy()
+
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+        gray = clahe.apply(gray)
+
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 30, 100)
+
+        # Horizontal dilation merges character blobs into one plate-shaped blob
+        kw = max(10, w // 10)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kw, 3))
+        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
+
+        best_quad = None
+        best_area = 0.0
+        min_area = w * h * 0.10  # must cover ≥10% of crop to be valid
+
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area < min_area:
+                continue
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.05 * peri, True)
+            if len(approx) != 4:
+                continue
+            # Reject tall/square shapes — a real plate is always wider than tall
+            rx, ry, rw, rh = cv2.boundingRect(approx)
+            if rw < 1.5 * rh:
+                continue
+            if area > best_area:
+                best_area = area
+                best_quad = approx
+
+        if best_quad is None:
+            return crop
+
+        # Order corners: top-left, top-right, bottom-right, bottom-left
+        # Classic "sum / diff" trick: TL=min(x+y), BR=max(x+y), TR=min(y-x), BL=max(y-x)
+        pts = best_quad.reshape(4, 2).astype(np.float32)
+        s = pts.sum(axis=1)
+        d = pts[:, 1] - pts[:, 0]
+        src = np.array([pts[np.argmin(s)],   # TL
+                        pts[np.argmin(d)],   # TR
+                        pts[np.argmax(s)],   # BR
+                        pts[np.argmax(d)]], dtype=np.float32)  # BL
+
+        out_w = max(400, w)
+        out_h = max(100, h)
+        dst = np.array([[0, 0], [out_w, 0], [out_w, out_h], [0, out_h]],
+                       dtype=np.float32)
+
+        M = cv2.getPerspectiveTransform(src, dst)
+        return cv2.warpPerspective(crop, M, (out_w, out_h),
+                                   flags=cv2.INTER_LANCZOS4)
+
+    # ------------------------------------------------------------------
+
+    def _patch_logged_event(self, st: _TrackState) -> None:
+        """Update a crossing event already in the DB with improved OCR / auth data."""
+        if st.event_id is None:
+            return
+        plate = st.best_plate
+        conf  = st.best_conf
+
+        owner = db.lookup_plate(plate) if plate else None
+        if owner is None and plate and conf >= 0.30:
+            min_sim = float(config.get("thresholds", "plate_fuzzy_similarity", default=0.60))
+            owner   = db.fuzzy_lookup_plate(plate, min_similarity=min_sim)
+        authorized = owner is not None
+
+        updated = db.update_event(
+            st.event_id,
+            plate=plate,
+            plate_confidence=conf,
+            authorized=authorized,
+            gate_opened=st.gate_triggered and authorized,
+        )
+        if updated is None:
+            return
+
+        st.event_authorized = authorized
+        log.info("Event %d updated: plate=%s auth=%s", st.event_id, plate, authorized)
+
+        if self.on_update:
+            payload = dict(updated)
+            payload["owner"]       = owner
+            payload["camera_name"] = self.name
+            try:
+                self.on_update(payload)
+            except Exception as e:
+                log.warning("on_update callback failed: %s", e)
 
     # ------------------------------------------------------------------
 
@@ -439,6 +595,10 @@ class CameraPipeline(threading.Thread):
             track_id=det.track_id,
             notes=decision.reason,
         )
+
+        # Remember this event's DB id so we can patch it if OCR improves later.
+        st.event_id         = ev["id"]
+        st.event_authorized = decision.authorized
 
         log.info(
             "EVENT cam=%s plate=%s dir=%s auth=%s opened=%s reason=%s",
@@ -597,8 +757,10 @@ class CameraPipeline(threading.Thread):
 class PipelineManager:
     """Owns one CameraPipeline per configured source."""
 
-    def __init__(self, on_event: Optional[EventCallback] = None):
-        self.on_event = on_event
+    def __init__(self, on_event: Optional[EventCallback] = None,
+                 on_update: Optional[EventCallback] = None):
+        self.on_event  = on_event
+        self.on_update = on_update
         self.detector: Optional[Detector] = None
         self.ocr: Optional[PlateOCR] = None
         self.pipelines: dict[str, CameraPipeline] = {}
@@ -611,7 +773,7 @@ class PipelineManager:
 
         for src in config.get("sources", default=[]):
             cp = CameraPipeline(src, self.detector, self.ocr,
-                                on_event=self.on_event)
+                                on_event=self.on_event, on_update=self.on_update)
             cp.start()
             self.pipelines[cp.id] = cp
             log.info("Started pipeline for camera %s", cp.id)
@@ -638,4 +800,32 @@ class PipelineManager:
             return False
         cp.switch_source(new_uri)
         return True
+
+    def start_demo(self, video_path: str) -> str:
+        """Start (or restart) a demo camera pipeline from a video file."""
+        self.stop_demo()   # stop any existing demo first
+        src = {
+            "id":               "demo_cam",
+            "name":             "Demo Video",
+            "role":             "gate",
+            "uri":              video_path,
+            "fps_target":       8,
+            "direction_line_y": 0.55,
+        }
+        cp = CameraPipeline(src, self.detector, self.ocr,
+                            on_event=self.on_event, on_update=self.on_update)
+        cp.start()
+        self.pipelines["demo_cam"] = cp
+        log.info("Demo pipeline started: %s", video_path)
+        return "demo_cam"
+
+    def stop_demo(self) -> bool:
+        """Stop and remove the demo camera pipeline if it is running."""
+        cp = self.pipelines.pop("demo_cam", None)
+        if cp:
+            cp.stop()
+            cp.join(timeout=3)
+            log.info("Demo pipeline stopped")
+            return True
+        return False
 
