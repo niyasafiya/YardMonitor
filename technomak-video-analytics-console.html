@@ -1360,6 +1360,8 @@
                     <div style="margin-top:7px">Camera or upload photo</div>
                   </div>
                 </div>
+                <!-- Live recognition badge (webcam mode) -->
+                <div id="bio-live-badge" style="display:none;position:absolute;left:8px;right:8px;bottom:8px;z-index:6;padding:7px 11px;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.03em;align-items:center;justify-content:center;text-align:center;backdrop-filter:blur(4px)"></div>
               </div>
               <div class="bio-capture">
                 <div class="bio-capture-head">
@@ -1371,6 +1373,11 @@
                   <button class="btn" id="bio-cap-btn" onclick="captureBio()" disabled>⎙ Capture</button>
                   <button class="btn ghost" onclick="document.getElementById('bio-upl-in').click()">↑ Upload photo / video</button>
                   <input type="file" id="bio-upl-in" accept="image/*,video/*" style="display:none" onchange="bioUploadChosen(this)">
+                </div>
+                <div id="bio-cam-picker" style="display:none;align-items:center;gap:8px;margin-top:8px">
+                  <span class="note" style="margin:0">Camera</span>
+                  <select id="bio-cam-select" onchange="switchBioCam(this.value)"
+                          style="flex:1;background:var(--bg-tile);border:1px solid var(--hair);color:var(--text);border-radius:7px;padding:6px 9px;font-size:12px"></select>
                 </div>
               </div>
               <button class="btn pri" id="bio-verify-btn" style="width:100%" onclick="verifyFace()" disabled>Verify Identity</button>
@@ -1965,22 +1972,118 @@
   let bioIsVideo = false;   // true when the verify input is a video clip (vs a photo)
   let regIsVideo = false;   // true when the register input is a video clip (vs a photo)
 
+  // --- Camera selection: prefer the laptop's built-in camera, skip virtual cams ---
+  let bioCamDeviceId = null;
+
+  // Virtual / phone-as-webcam apps we should NOT auto-select (iVCam, DroidCam, OBS…)
+  const _VIRTUAL_CAM = /ivcam|iriun|droidcam|obs|virtual|snap ?camera|manycam|epoccam|xsplit|elgato|reincubate/i;
+  const _BUILTIN_CAM = /integrated|built.?in|internal|hd webcam|hd camera|facetime|webcam|user.?facing|front/i;
+
+  async function _pickBuiltInDeviceId() {
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices())
+                    .filter(d => d.kind === 'videoinput');
+      if (!cams.length) return null;
+      const real = cams.filter(d => !_VIRTUAL_CAM.test(d.label || ''));
+      const chosen = real.find(d => _BUILTIN_CAM.test(d.label || '')) || real[0] || cams[0];
+      return chosen ? chosen.deviceId : null;
+    } catch (e) { return null; }
+  }
+
+  // Open a camera stream: a specific device if given, else auto-pick the built-in one.
+  async function _getCameraStream(deviceId) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Webcam needs a secure page. Open the console at http://127.0.0.1:8000/console (not the file:// path).');
+    }
+    if (deviceId) {
+      return navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, width: 640, height: 480 }
+      });
+    }
+    // First call also grants permission so device labels become readable.
+    // It may open (or fail on) a virtual default like iVCam — we handle both.
+    let stream = null, probeErr = null;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+    catch (e) { probeErr = e; }
+
+    let cams = [];
+    try {
+      cams = (await navigator.mediaDevices.enumerateDevices())
+              .filter(d => d.kind === 'videoinput');
+    } catch (e) {}
+    const real = cams.filter(d => !_VIRTUAL_CAM.test(d.label || ''));
+
+    const _openReal = async () => {
+      const target = real.find(d => _BUILTIN_CAM.test(d.label || '')) || real[0] || cams[0];
+      if (target && target.deviceId) {
+        return navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: target.deviceId }, width: 640, height: 480 }
+        });
+      }
+      return null;
+    };
+
+    if (stream) {
+      const curLabel = _streamLabel(stream);
+      const curIsVirtual = _VIRTUAL_CAM.test(curLabel);
+      const curIsReal    = real.some(d => d.label && d.label === curLabel);
+      // Opened a virtual/phone cam (e.g. iVCam), or anything we can't confirm is a
+      // real camera → switch to the built-in physical camera when one exists.
+      if ((curIsVirtual || !curIsReal) && real.length) {
+        try {
+          const s2 = await _openReal();
+          if (s2) { stream.getTracks().forEach(t => t.stop()); return s2; }
+        } catch (e) { /* keep the probe stream */ }
+      }
+      return stream;
+    }
+
+    // The default camera failed to start (e.g. iVCam with its app closed) →
+    // open a real camera directly.
+    const s3 = await _openReal();
+    if (s3) return s3;
+    throw probeErr || new Error('No camera available');
+  }
+
+  async function _populateCamSelect(currentId) {
+    const sel = document.getElementById('bio-cam-select');
+    const wrap = document.getElementById('bio-cam-picker');
+    if (!sel) return;
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices())
+                    .filter(d => d.kind === 'videoinput');
+      if (!cams.length) { if (wrap) wrap.style.display = 'none'; return; }
+      console.log('[cam] devices:', cams.map(d => d.label || '(no label)'));
+      sel.innerHTML = cams.map((d, i) =>
+        `<option value="${d.deviceId}">${(d.label || ('Camera ' + (i + 1)))}` +
+        `${_VIRTUAL_CAM.test(d.label || '') ? '  ⚠ virtual' : ''}</option>`).join('');
+      if (currentId) sel.value = currentId;
+      // Always show the picker while the webcam is on, so the user can switch
+      if (wrap) wrap.style.display = 'flex';
+    } catch (e) { if (wrap) wrap.style.display = 'none'; }
+  }
+
+  function _streamLabel(stream) {
+    try { return stream.getVideoTracks()[0]?.label || ''; } catch (e) { return ''; }
+  }
+
   // --- Verify webcam ---
   async function toggleBioCam() {
     if (bioCamStream) {
+      _bioLiveStop();
       bioCamStream.getTracks().forEach(t => t.stop());
       bioCamStream = null;
       document.getElementById('bio-vid').style.display = 'none';
       document.getElementById('bio-placeholder').style.display = '';
-      document.getElementById('bio-cam-btn').textContent = 'Start Webcam';
+      document.getElementById('bio-cam-btn').textContent = '◉ Start Webcam';
       document.getElementById('bio-cap-btn').disabled = true;
+      const b = document.getElementById('bio-live-badge'); if (b) b.style.display = 'none';
+      const pk = document.getElementById('bio-cam-picker'); if (pk) pk.style.display = 'none';
       return;
     }
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Webcam needs a secure page. Open the console at http://127.0.0.1:8000/console (not the file:// path).');
-      }
-      bioCamStream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+      bioCamStream = await _getCameraStream(bioCamDeviceId);
+      bioCamDeviceId = bioCamStream.getVideoTracks()[0]?.getSettings()?.deviceId || bioCamDeviceId;
       bioIsVideo = false;
       const vid = document.getElementById('bio-vid');
       vid.pause(); vid.removeAttribute('src'); vid.srcObject = bioCamStream;
@@ -1990,7 +2093,103 @@
       document.getElementById('bio-prev').style.display = 'none';
       document.getElementById('bio-cam-btn').textContent = 'Stop Webcam';
       document.getElementById('bio-cap-btn').disabled = false;
+      _populateCamSelect(bioCamDeviceId);
+      // Warn if we could only get a virtual / phone camera (e.g. iVCam)
+      if (_VIRTUAL_CAM.test(_streamLabel(bioCamStream))) {
+        _toast('Built-in camera not detected — using "' + _streamLabel(bioCamStream) +
+               '". Pick your laptop camera below, or close iVCam and retry.', 'warn');
+      }
+      // Start live face recognition on the webcam feed
+      _bioLiveStart();
     } catch(e) { alert('Cannot access webcam: ' + e.message); }
+  }
+
+  // Switch to a different camera from the picker (keeps live scanning running)
+  async function switchBioCam(deviceId) {
+    if (!deviceId) return;
+    bioCamDeviceId = deviceId;
+    _bioLiveStop();
+    if (bioCamStream) { bioCamStream.getTracks().forEach(t => t.stop()); bioCamStream = null; }
+    try {
+      bioCamStream = await _getCameraStream(deviceId);
+      const vid = document.getElementById('bio-vid');
+      vid.pause(); vid.removeAttribute('src'); vid.srcObject = bioCamStream;
+      vid.muted = true; vid.play().catch(() => {});
+      vid.style.display = 'block';
+      _bioLiveStart();
+    } catch(e) { alert('Cannot switch camera: ' + e.message); }
+  }
+
+  // ─── Live webcam face recognition ────────────────────────────────────────────
+  let _bioLiveTimer = null, _bioLiveBusy = false, _bioLiveLast = '';
+  function _bioLiveStart() {
+    _bioLiveStop();
+    _bioLiveLast = '';
+    const b = document.getElementById('bio-live-badge');
+    if (b) { b.style.display = 'flex'; b.style.background = 'rgba(0,0,0,.6)'; b.style.color = '#cfe'; b.textContent = '🔍 Looking for a face…'; }
+    _bioLiveTimer = setInterval(_bioLiveTick, 2200);
+  }
+  function _bioLiveStop() {
+    if (_bioLiveTimer) { clearInterval(_bioLiveTimer); _bioLiveTimer = null; }
+    _bioLiveBusy = false;
+  }
+  async function _bioLiveTick() {
+    if (_bioLiveBusy) return;
+    const vid = document.getElementById('bio-vid');
+    if (!vid || !bioCamStream || vid.readyState < 2) return;
+    _bioLiveBusy = true;
+    try {
+      const canvas = document.getElementById('bio-canvas');
+      canvas.width  = vid.videoWidth  || 640;
+      canvas.height = vid.videoHeight || 480;
+      canvas.getContext('2d').drawImage(vid, 0, 0);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+      canvas.style.display = 'none';
+      if (!blob) { _bioLiveBusy = false; return; }
+      const fd = new FormData();
+      fd.append('photo', blob, 'live.jpg');
+      const res = await fetch(`${API}/api/v1/biometric/verify?log=false`, { method: 'POST', body: fd });
+      const data = await res.json();
+      _bioLiveBadge(data);
+      const matched = !!(data.matched && data.person);
+      if (matched) {
+        const nm = data.person.name;
+        if (nm !== _bioLiveLast) {          // only act when the identity changes
+          _bioLiveLast = nm;
+          try {
+            const lf = new FormData();
+            lf.append('person_name', nm);
+            lf.append('confidence', String(data.confidence || 1));
+            lf.append('decision', 'GRANTED');
+            await fetch(`${API}/api/v1/biometric/log`, { method: 'POST', body: lf });
+          } catch (_) {}
+          _toast('✓ Access granted — ' + nm, 'ok');
+          loadBioLog();
+        }
+      } else if (data.face) {                // a face is present but not recognised
+        _bioLiveLast = '';
+        _denyAlert('Biometric access denied', 'Live webcam — face not recognised');
+      } else {
+        _bioLiveLast = '';                   // nobody in frame — stay quiet
+      }
+    } catch (e) { /* transient network/frame error — keep scanning */ }
+    finally { _bioLiveBusy = false; }
+  }
+  function _bioLiveBadge(data) {
+    const b = document.getElementById('bio-live-badge');
+    if (!b) return;
+    b.style.display = 'flex';
+    if (!data.face) {
+      b.style.background = 'rgba(0,0,0,.6)'; b.style.color = '#cfe';
+      b.textContent = '🔍 Looking for a face…';
+      return;
+    }
+    const ok = data.matched && data.person;
+    b.style.background = ok ? 'rgba(5,150,105,.92)' : 'rgba(220,38,38,.92)';
+    b.style.color = '#fff';
+    b.textContent = ok
+      ? `✓ ${data.person.name} — ACCESS GRANTED (${(data.confidence * 100).toFixed(0)}%)`
+      : '✕ ACCESS DENIED — not recognised';
   }
 
   function captureBio() {
@@ -2009,11 +2208,14 @@
       canvas.style.display = 'none';
       document.getElementById('bio-verify-btn').disabled = false;
     }, 'image/jpeg', 0.92);
-    // Stop webcam after capture
+    // Stop webcam (and live scanning) after capture
+    _bioLiveStop();
+    const _lb = document.getElementById('bio-live-badge'); if (_lb) _lb.style.display = 'none';
+    const _pk = document.getElementById('bio-cam-picker'); if (_pk) _pk.style.display = 'none';
     if (bioCamStream) { bioCamStream.getTracks().forEach(t => t.stop()); bioCamStream = null; }
     vid.style.display = 'none';
     document.getElementById('bio-placeholder').style.display = 'none';
-    document.getElementById('bio-cam-btn').textContent = 'Start Webcam';
+    document.getElementById('bio-cam-btn').textContent = '◉ Start Webcam';
     document.getElementById('bio-cap-btn').disabled = true;
   }
 
@@ -2023,10 +2225,13 @@
     bioImageBlob = f;
     bioIsVideo = (f.type || '').startsWith('video/') || /\.(mp4|avi|mov|mkv|webm)$/i.test(f.name);
 
-    // Stop any running webcam so the preview is free
+    // Stop any running webcam + live scanning so the preview is free
+    _bioLiveStop();
+    const _lb2 = document.getElementById('bio-live-badge'); if (_lb2) _lb2.style.display = 'none';
+    const _pk2 = document.getElementById('bio-cam-picker'); if (_pk2) _pk2.style.display = 'none';
     if (bioCamStream) {
       bioCamStream.getTracks().forEach(t => t.stop()); bioCamStream = null;
-      document.getElementById('bio-cam-btn').textContent = 'Start Webcam';
+      document.getElementById('bio-cam-btn').textContent = '◉ Start Webcam';
       document.getElementById('bio-cap-btn').disabled = true;
     }
 

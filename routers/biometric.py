@@ -174,21 +174,23 @@ async def register_person(
 
 
 @router.post("/verify")
-async def verify_face(photo: UploadFile = File(...)):
+async def verify_face(photo: UploadFile = File(...), log: bool = Query(True)):
+    """Verify a face. `log=false` skips the access-log write — used by the live
+    webcam loop so it doesn't flood the log on every sampled frame."""
     image_bytes = await photo.read()
     persons     = _list_persons()
     result      = bio_service.verify_face(image_bytes, persons)
 
-    # Log
-    decision = "GRANTED" if result["matched"] else "DENIED"
-    person   = result.get("person") or {}
-    conn = db.get_conn()
-    conn.execute(
-        "INSERT INTO bio_log (person_name, confidence, decision) VALUES (?,?,?)",
-        (person.get("name", "Unknown"), result["confidence"], decision),
-    )
-    conn.commit()
-    conn.close()
+    if log:
+        decision = "GRANTED" if result["matched"] else "DENIED"
+        person   = result.get("person") or {}
+        conn = db.get_conn()
+        conn.execute(
+            "INSERT INTO bio_log (person_name, confidence, decision) VALUES (?,?,?)",
+            (person.get("name", "Unknown"), result["confidence"], decision),
+        )
+        conn.commit()
+        conn.close()
 
     return result
 
@@ -236,9 +238,9 @@ def _recognize_face_video(video_path: str, persons: list[dict]) -> dict:
 
     fps   = cap.get(cv2.CAP_PROP_FPS) or 25
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
-    step  = max(1, int(round(fps * 0.5)))      # ~2 frames/sec
+    step  = max(1, int(round(fps * 0.6)))      # ~1.6 frames/sec
     limit = min(total or 1500, 1500)           # scan ≤ ~60 s
-    MAX_CHECKS = 20                            # cap face-recognition passes — faster
+    MAX_CHECKS = 16                            # a few more frames → better odds of a clear face
 
     best = {"matched": False, "confidence": 0.0, "person": None, "engine": "none"}
     idx = 0
@@ -259,8 +261,10 @@ def _recognize_face_video(video_path: str, persons: list[dict]) -> dict:
                 r = bio_service.verify_face(buf.tobytes(), persons)
                 if r["confidence"] > best["confidence"]:
                     best = r
-                if r["matched"] and r["confidence"] >= 0.88:
-                    break   # confident match — stop early
+                # Confident match — stop early. ArcFace genuine cosine sits well
+                # above its 0.40 match threshold, so 0.55 is a safe "sure" bar.
+                if r["matched"] and r["confidence"] >= 0.55:
+                    break
         idx += 1
     cap.release()
     best["frames_checked"] = frames_checked
@@ -298,19 +302,22 @@ async def verify_video(video: UploadFile = File(...)):
     return result
 
 
-def _best_face_frame(video_path: str):
-    """Pick the first frame containing a detectable face. Returns
-    (jpeg_bytes, embedding) — or (first_frame_bytes, None) if no face is found."""
+def _collect_gallery(video_path: str):
+    """Sample many frames across the clip and build a diverse GALLERY of face
+    embeddings — different angles / expressions / with & without glasses. This is
+    what makes verification robust to appearance changes. Returns
+    (photo_jpeg_bytes, gallery) where gallery = {"engine", "vecs": [...]}."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise HTTPException(400, "Cannot open video file")
 
     fps   = cap.get(cv2.CAP_PROP_FPS) or 25
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
-    step  = max(1, int(round(fps * 0.3)))
+    step  = max(1, int(round(fps * 0.3)))      # ~3 frames/sec
     limit = min(total or 3000, 3000)
 
-    fallback = None
+    photo   = None
+    gallery: dict = {}
     idx = 0
     while idx < limit:
         if not cap.grab():
@@ -325,15 +332,32 @@ def _best_face_frame(video_path: str):
             ok2, buf = cv2.imencode(".jpg", frame)
             if ok2:
                 jpg = buf.tobytes()
-                if fallback is None:
-                    fallback = jpg
+                if photo is None:
+                    photo = jpg                # keep first frame as a fallback photo
                 emb = bio_service.compute_embedding(jpg)
-                if emb and emb.get("face"):
-                    cap.release()
-                    return jpg, emb
+                if emb and emb.get("vec"):
+                    if not gallery.get("vecs"):
+                        photo = jpg            # prefer a real face frame for the photo
+                    bio_service.add_to_gallery(gallery, emb)
+                    # Also add a horizontally-mirrored view → better recognition when
+                    # the face is turned to the other side than in enrolment.
+                    ok3, mbuf = cv2.imencode(".jpg", cv2.flip(frame, 1))
+                    if ok3:
+                        memb = bio_service.compute_embedding(mbuf.tobytes())
+                        if memb and memb.get("vec"):
+                            bio_service.add_to_gallery(gallery, memb)
+                    # …and a contrast/sharpness-enhanced view → matches unclear or
+                    # low-light query frames later.
+                    enh = bio_service.enhance_bytes(jpg)
+                    if enh:
+                        eemb = bio_service.compute_embedding(enh)
+                        if eemb and eemb.get("vec"):
+                            bio_service.add_to_gallery(gallery, eemb)
+                    if len(gallery.get("vecs", [])) >= bio_service._MAX_GALLERY:
+                        break
         idx += 1
     cap.release()
-    return fallback, None
+    return photo, gallery
 
 
 @router.post("/register-video", status_code=201)
@@ -344,21 +368,22 @@ async def register_person_video(
     department:      str        = Form("General"),
     clearance_level: str        = Form("L1"),
 ):
-    """Register a person from a video clip: picks the best frame containing a
-    face, stores it as the photo, and saves the face embedding."""
+    """Register a person from a video clip: build a gallery of face embeddings
+    across the clip (robust to glasses / angle / lighting) and store the best photo."""
     _UPLOADS.mkdir(parents=True, exist_ok=True)
     suffix = Path(video.filename or "v.mp4").suffix or ".mp4"
     tmp    = _UPLOADS / f"reg_{uuid.uuid4().hex}{suffix}"
     tmp.write_bytes(await video.read())
     try:
-        frame_bytes, embedding = await asyncio.to_thread(_best_face_frame, str(tmp))
+        frame_bytes, gallery = await asyncio.to_thread(_collect_gallery, str(tmp))
     finally:
         tmp.unlink(missing_ok=True)
 
-    face_detected = embedding is not None
+    n_vecs        = len(gallery.get("vecs", []))
+    face_detected = n_vecs > 0
     photo_path    = bio_service.save_photo(employee_id, frame_bytes) if frame_bytes else None
-    if embedding:
-        bio_service.save_encoding(employee_id, embedding)
+    if face_detected:
+        bio_service.save_encoding(employee_id, gallery)
 
     conn = db.get_conn()
     conn.execute(
@@ -377,8 +402,10 @@ async def register_person_video(
     return {
         "success": True,
         "face_detected": face_detected,
+        "samples": n_vecs,
         "message": (
-            f"{name} registered from video (face captured)."
+            f"{name} registered from video — captured {n_vecs} face sample"
+            f"{'' if n_vecs == 1 else 's'} for robust recognition."
             if face_detected
             else f"{name} registered, but no clear face was found — try a clearer clip."
         ),

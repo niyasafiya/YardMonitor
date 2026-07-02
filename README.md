@@ -1,175 +1,200 @@
 # Sentinel — AI Video Analytics Console
 
-A full-stack warehouse security and operations platform built for **Technomak**.  
-Single-page control-room UI backed by a FastAPI server with real computer-vision pipelines.
+A full-stack warehouse security & operations platform built for **Technomak**.
+A single-page control-room UI backed by a **FastAPI** server running real
+computer-vision pipelines (ANPR, face recognition, PPE & worker-activity
+detection, vehicle detection).
+
+Every analytics tile works on **uploaded video, photos, or screenshots** — no
+special camera hardware is required to demo or use the system.
 
 ---
 
-## Features
+## Modules
 
 | Module | Capability |
 |--------|-----------|
-| **ANPR** (Automatic Number Plate Recognition) | Upload gate-camera footage → detect Indian licence plates via EasyOCR → cross-check against an authorised-vehicle whitelist → log every entry/exit decision |
-| **Biometric Auth** | Face recognition via DeepFace — enrol employees, verify against stored embeddings |
-| **Object Detection** | YOLOv4-tiny & YOLOv8n inference on uploaded video frames — people, PPE, vehicles, forklifts |
-| **Live MJPEG Streams** | Per-camera MJPEG endpoints served by OpenCV |
-| **Gate & Access** | Whitelist management (add / remove plates), access log, facial recognition + tailgating detection |
-| **People & Safety** | PPE compliance monitoring, zone intrusion alerts |
-| **Vehicle & Logistics** | Turnaround time tracking, near-miss event intake |
-| **Operations Overview** | Real-time KPI dashboard, 4-camera live feed grid, event feed |
+| **Operations overview** | 4 module-aligned camera tiles (ANPR · Face Recognition · PPE · Activity), a live event feed, and pop-up alerts |
+| **Gate & Access** | ANPR number-plate detection + whitelist authorization (grant/deny), face recognition (grant/deny), and an editable authorised-people list |
+| **People & Safety** | PPE compliance (hard-hat / vest), worker-activity monitoring (working / on-phone / chatting / resting), a live PPE-compliance gauge, an events feed with per-row delete, and 4 warehouse camera tiles |
+| **Activity Monitor** | Detailed per-worker activity classification |
+| **Biometric Auth** | Register people (webcam / photo / video), verify identity, editable personnel list, access log |
+| **Vehicle & Logistics** | Vehicle detection camera tile, turnaround-time tracking, manual gate override |
+| **Alerts** | Every access-denied / violation event (PPE not worn, biometric denied, vehicle denied) raises a bottom-right pop-up **and** an entry in the Alerts tab |
 
 ---
 
-## Tech Stack
+## Models & AI pipelines
+
+| Task | Engine(s) |
+|------|-----------|
+| **Number plates (ANPR)** | **PaddleOCR** (primary) with **EasyOCR** fallback; YOLOv8n for the surrounding vehicle box; cross-frame majority voting for accuracy |
+| **Face recognition** | **DeepFace / Facenet** — 128-d embedding (primary); **OpenCV Haar-cascade face-crop** embedding as a TensorFlow-free fallback. Cosine-similarity matching against stored, engine-tagged encodings |
+| **PPE (hard-hat / vest)** | Person boxes from **YOLOv8n** (COCO); PPE model auto-downloaded from HuggingFace (`keremberke/yolov8s-hard-hat-detection`) |
+| **Worker activity** | **YOLOv8n-pose** (resting) + YOLOv8n COCO cell-phone class (on-phone) + proximity heuristic (chatting) |
+
+Model weights (`*.pt`) and OCR/face models download automatically on first use
+and are **not** stored in git.
+
+---
+
+## Tech stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend API | FastAPI + Uvicorn |
-| Computer Vision | OpenCV, EasyOCR, DeepFace, YOLOv4-tiny, YOLOv8n (Ultralytics) |
-| Database | SQLite (via `db.py`) |
-| Frontend | Single self-contained HTML file — no build step |
-| ML deps | NumPy, Pillow, SciPy, TensorFlow/Keras |
+| Backend / API | **Python** — FastAPI + Uvicorn (REST/JSON + MJPEG) |
+| Computer vision | OpenCV, Ultralytics (YOLOv8 / YOLOv8-pose), PaddleOCR, EasyOCR, DeepFace (tf-keras) |
+| Database | **SQLite** (`db.py`, WAL mode) + JSON for face encodings |
+| Frontend | Single self-contained **HTML + CSS + vanilla JavaScript** file — no framework, no build step |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 Ai Camera/
-├── main.py                          # FastAPI app entry point
-├── db.py                            # SQLite connection helper
-├── technomak-video-analytics-console.html  # Full frontend UI
+├── main.py                                   # FastAPI app; serves the console at /console
+├── db.py                                     # SQLite schema + connection helper
+├── detector.py                               # Person/vehicle YOLO detector wrapper
+├── technomak-video-analytics-console.html    # Entire frontend UI
 ├── requirements.txt
-├── start.bat / start_server.bat     # Windows one-click launchers
+├── start.bat / start_server.bat              # Windows launchers
 │
 ├── routers/
-│   ├── anpr.py                      # ANPR upload, job polling, whitelist, access log
-│   ├── biometric.py                 # Face enrol & verify endpoints
-│   ├── streams.py                   # MJPEG camera stream endpoints
-│   └── vehicles.py                  # Vehicle turnaround & near-miss endpoints
+│   ├── anpr.py          # ANPR video job, single-image scan, whitelist, access log
+│   ├── biometric.py     # Face register/verify (image + video), persons CRUD, log
+│   ├── safety.py        # PPE + activity analyze-image/analyze-video, events log
+│   ├── streams.py       # MJPEG camera stream endpoints (synthetic placeholders)
+│   └── vehicles.py      # Vehicle entry/exit, turnaround, demo detection
 │
 ├── services/
-│   ├── anpr_service.py              # EasyOCR multi-pass plate extraction
-│   ├── bio_service.py               # DeepFace embedding enrol/verify
-│   ├── yolo_service.py              # YOLOv4-tiny / YOLOv8n inference
-│   └── demo_pipeline.py             # Demo detection pipeline
+│   ├── anpr_service.py       # PaddleOCR (EasyOCR fallback) plate extraction
+│   ├── bio_service.py        # DeepFace/Facenet + OpenCV embedding, verify
+│   ├── ppe_service.py        # Person + hard-hat/vest detection & compliance
+│   ├── activity_service.py   # Pose + phone + proximity activity classification
+│   └── yolo_service.py       # Shared YOLO vehicle detector
 │
-├── app/                             # Alternate standalone app module
-│   ├── anpr.py
-│   ├── biometric.py
-│   ├── database.py
-│   └── main.py
-│
-├── models/
-│   ├── yolov4-tiny.weights          # YOLOv4-tiny weights
-│   ├── yolov4-tiny.cfg
-│   ├── coco.names
-│   └── yolov8n.pt                   # YOLOv8n weights
-│
-├── faces/                           # Enrolled face images
-├── uploads/                         # Temporary video uploads (auto-cleaned)
-└── data/                            # Static reference data
+├── models/              # YOLO weights (auto-downloaded; gitignored)
+└── data/                # sentinel.db, encodings.json, faces/ (runtime; gitignored)
 ```
 
 ---
 
-## Setup & Run
+## Setup & run
 
 **Requirements:** Python 3.10+
 
-### 1. Create and activate a virtual environment
-
 ```bash
-# Windows
+# 1. Virtual environment
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate            # Windows
+# source venv/bin/activate       # macOS / Linux
 
-# Mac / Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
+# 2. Dependencies
 pip install -r requirements.txt
+
+# 3. Start the server
+python main.py                   # or: uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-> First run downloads EasyOCR and DeepFace model weights automatically (~500 MB).
+> First run downloads the OCR / face / YOLO model weights automatically
+> (several hundred MB total). PPE and pose models download on first detection.
 
-### 3. Start the server
+**Open the console:** <http://127.0.0.1:8000/console>
 
-**Windows (one-click):**
-```
-start_server.bat
-```
+Use the `/console` URL (not the raw `file://` path) so browser features that need
+a secure context — e.g. the webcam for biometric enrolment — work reliably.
 
-**Or manually:**
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 4. Open the console
-
-Open `technomak-video-analytics-console.html` directly in your browser.  
-The UI connects to `http://127.0.0.1:8000` automatically.
-
-Interactive API docs: **http://127.0.0.1:8000/docs**
+Interactive API docs: <http://127.0.0.1:8000/docs>
 
 ---
 
-## API Endpoints
+## Key API endpoints
 
-### ANPR
+### ANPR — `/api/v1/anpr`
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/anpr/upload` | Upload gate video → start background OCR job |
-| `GET` | `/api/v1/anpr/job/{job_id}` | Poll job status & results |
-| `GET` | `/api/v1/anpr/authorized` | List whitelisted vehicles |
-| `POST` | `/api/v1/anpr/authorized` | Add vehicle to whitelist |
-| `DELETE` | `/api/v1/anpr/authorized/{plate}` | Remove vehicle from whitelist |
-| `GET` | `/api/v1/anpr/log` | Recent access log |
+| `POST` | `/upload` | Upload gate video → background OCR job |
+| `GET` | `/job/{id}` | Poll job status + detected plates |
+| `GET` | `/job/{id}/track` · `/frame` · `/video` | Moving detection-box track / annotated frame / annotated video |
+| `POST` | `/scan-image` | Instant single-image / screenshot plate scan |
+| `GET`/`POST` | `/authorized` | List / add whitelisted vehicles |
+| `PUT`/`DELETE` | `/authorized/{plate}` | Update / remove a whitelisted vehicle |
+| `GET` | `/log` | Recent access log |
 
-### Biometric
+### Biometric — `/api/v1/biometric`
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/biometric/enrol` | Enrol an employee face |
-| `POST` | `/api/v1/biometric/verify` | Verify face against enrolled embeddings |
+| `POST` | `/register` · `/register-video` | Enrol a person from a photo or a video clip |
+| `POST` | `/verify` · `/verify-video` | Verify identity from a photo or a clip → grant/deny |
+| `GET` | `/persons` | List registered people |
+| `PATCH`/`DELETE` | `/persons/{employee_id}` | Edit / remove a person |
+| `GET`/`POST` | `/log` | Access log |
 
-### Vehicles
+### People & Safety — `/api/v1/safety`
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/vehicles/entry` | Record vehicle entry |
-| `POST` | `/api/v1/vehicles/exit` | Record vehicle exit (calculates turnaround) |
-| `GET` | `/api/v1/vehicles` | All vehicle visits |
-| `GET` | `/api/v1/vehicles/onsite` | Vehicles currently on site |
-| `GET` | `/api/v1/analytics/turnaround` | Average turnaround stats |
+| `GET` | `/status` | Model availability (hat / vest) |
+| `POST` | `/analyze-image` · `/analyze-video` | PPE + activity detection → annotated frame + per-person results |
+| `GET` | `/log` | PPE / activity event feed |
+| `DELETE` | `/log/{id}` · `/log?kind=ppe\|activity` | Remove one event / clear a kind / clear all |
+
+### Vehicles — `/api/v1/vehicles`
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/entry` · `/exit` | Record vehicle entry / exit (turnaround) |
+| `POST` | `/demo-upload` → `GET /demo-job/{id}` | Vehicle-detection job on an uploaded clip |
 
 ### Streams
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/stream/{cam_id}` | MJPEG stream for a camera (cam01, cam12, etc.) |
+| `GET` | `/stream/{cam_id}` | MJPEG stream (`cam01`, `cam02`, `cam05`, `cam08`, `cam12`) — synthetic placeholder frames |
 
 ---
 
-## ANPR Pipeline
+## Pipelines at a glance
 
-1. Video uploaded → saved to `uploads/`
-2. Background thread samples up to **5 evenly-spaced frames** (one every 4 s)
-3. Each frame is cropped to the bottom 65 % and resized to 480 px wide
-4. EasyOCR runs with `canvas_size=480` (fast CRAFT detection)
-5. Detected text is cleaned, validated against Indian plate regex, and OCR-confusion characters are corrected (O↔0, I↔1, S↔5, etc.)
-6. Plates are fuzzy-matched (Levenshtein ≤ 1) against the whitelist
-7. Results written to `anpr_plates` and `anpr_log` tables; job marked `completed`
+**ANPR** — sample frames (early-stop on a confident read) → downscale → PaddleOCR/EasyOCR
+→ clean & validate against a plate regex, correcting OCR-confusion characters
+(O↔0, I↔1, S↔5…) → cross-frame majority vote → fuzzy-match against the whitelist
+→ log GRANTED / DENIED. A single image uses the same logic in one pass via `/scan-image`.
+
+**Biometric** — register: detect face → compute embedding → store photo + engine-tagged
+vector. Verify: compute the query embedding → cosine-similarity vs stored encodings of
+the *same* engine → grant if ≥ threshold (Facenet 0.72 / OpenCV 0.80).
+
+**PPE & activity** — detect each person (YOLOv8n, tuned for high recall) → overlay
+hard-hat/vest signal boxes on head/torso regions to decide compliance → classify
+activity from pose + phone proximity → return an annotated frame, aggregate counts,
+and per-person detail.
 
 ---
 
-## Biometric Pipeline
- 
-1. Enrolment: face image uploaded → DeepFace extracts embedding → stored in `faces/`
-2. Verification: query image compared against all stored embeddings using cosine similarity
-3. Returns match name, confidence score, and GRANTED / DENIED decision
+## Objectives
 
+- **Automated access control** — check plates and faces against a database and
+  grant/deny without manual verification.
+- **Proactive safety** — instantly flag missing PPE and off-task workers.
+- **Single pane of glass** — plates, faces, PPE, activity, and vehicles in one console,
+  with editable authorized-vehicle and authorized-people lists and a full audit log.
+
+---
+
+## Current status
+
+**Working:** ANPR (video + image), biometric register/verify (image + video), PPE &
+activity detection, dynamic PPE-compliance gauge, per-camera tiles across
+Operations / Gate / Safety / Vehicle, editable whitelists & personnel, pop-up alerts +
+Alerts tab, local-time logs.
+
+**Demo / placeholder (not yet real):** camera "streams" are synthetic MJPEG frames
+(no live RTSP wired in — detection runs on uploaded media); the **restricted-zone
+intrusion** and **fall / motionless** safety panels are static illustrative demos.
+
+**Notes / limits:** PPE vest detection depends on the loaded HF model's classes
+(hat-only unless swapped for a hat+vest model); person detection uses CPU YOLOv8n
+(tuned for recall at `imgsz=960`, but heavy occlusion can still cause misses — a larger
+model would improve this at the cost of speed).
 
 ---
 
