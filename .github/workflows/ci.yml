@@ -1,0 +1,71 @@
+# ============================================================
+#  Sentinel AI — automatic code check (Continuous Integration)
+# ============================================================
+# What this does:
+#   Every time code is pushed or a Pull Request is opened, GitHub
+#   automatically runs these checks in the cloud — for FREE — to make
+#   sure the code is not broken. You'll see a green tick (pass) or a
+#   red cross (fail) next to your commits on GitHub.
+#
+# It does NOT run the cameras or the heavy AI models (that happens on
+# your office PC). It only verifies the Python code is valid and the
+# requirements file is well-formed — this is fast (under a minute).
+# ------------------------------------------------------------
+
+name: CI - code check
+
+on:
+  push:
+    branches: ["**"]          # run on every branch push
+  pull_request:
+    branches: ["**"]          # and on every pull request
+  workflow_dispatch:          # plus a manual "Run" button in the Actions tab
+
+jobs:
+  code-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check all Python files compile (no syntax errors)
+        run: |
+          python -m compileall -q main.py db.py routers services
+          echo "All Python files compiled successfully."
+
+      - name: Check requirements.txt is valid
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          bad = []
+          for line in Path("requirements.txt").read_text().splitlines():
+              s = line.split("#", 1)[0].strip()
+              if not s:
+                  continue
+              # a valid line looks like  package==1.2.3  or  package>=1.2
+              if not any(op in s for op in ("==", ">=", "<=", "~=", ">", "<")) and "[" not in s:
+                  # allow bare package names too, just flag oddities
+                  if " " in s:
+                      bad.append(line)
+          if bad:
+              print("Suspicious requirement lines:")
+              for b in bad:
+                  print("  ", b)
+              raise SystemExit(1)
+          print("requirements.txt looks valid.")
+          PY
+
+      - name: Confirm key files are present
+        run: |
+          for f in main.py requirements.txt technomak-video-analytics-console.html cameras.env.example; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING: $f"; exit 1
+            fi
+          done
+          echo "All key files present."
