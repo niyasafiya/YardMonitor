@@ -1997,7 +1997,7 @@
     }
     if (deviceId) {
       return navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId }, width: 640, height: 480 }
+        video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
       });
     }
     // First call also grants permission so device labels become readable.
@@ -2017,7 +2017,7 @@
       const target = real.find(d => _BUILTIN_CAM.test(d.label || '')) || real[0] || cams[0];
       if (target && target.deviceId) {
         return navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: target.deviceId }, width: 640, height: 480 }
+          video: { deviceId: { exact: target.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
         });
       }
       return null;
@@ -2127,7 +2127,7 @@
     _bioLiveLast = '';
     const b = document.getElementById('bio-live-badge');
     if (b) { b.style.display = 'flex'; b.style.background = 'rgba(0,0,0,.6)'; b.style.color = '#cfe'; b.textContent = '🔍 Looking for a face…'; }
-    _bioLiveTimer = setInterval(_bioLiveTick, 2200);
+    _bioLiveTimer = setInterval(_bioLiveTick, 1500);
   }
   function _bioLiveStop() {
     if (_bioLiveTimer) { clearInterval(_bioLiveTimer); _bioLiveTimer = null; }
@@ -2185,11 +2185,12 @@
       return;
     }
     const ok = data.matched && data.person;
+    const pct = (data.confidence * 100).toFixed(0);
     b.style.background = ok ? 'rgba(5,150,105,.92)' : 'rgba(220,38,38,.92)';
     b.style.color = '#fff';
     b.textContent = ok
-      ? `✓ ${data.person.name} — ACCESS GRANTED (${(data.confidence * 100).toFixed(0)}%)`
-      : '✕ ACCESS DENIED — not recognised';
+      ? `✓ ${data.person.name} — ACCESS GRANTED (${pct}%)`
+      : `✕ Not recognised (${pct}%) — face the camera, move closer, add light`;
   }
 
   function captureBio() {

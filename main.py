@@ -11,6 +11,12 @@ Open http://127.0.0.1:8000/docs for interactive API docs.
 import threading
 from pathlib import Path
 
+try:                                    # load camera RTSP URLs etc. from .env if present
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse

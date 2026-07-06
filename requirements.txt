@@ -7,6 +7,7 @@ paddlepaddle==2.6.2
 paddleocr==2.7.3
 easyocr==1.7.1
 deepface==0.0.93
+retina-face>=0.0.17   # strongest face detector for glasses / angles / unclear frames
 numpy==1.26.4
 Pillow==10.3.0
 tf-keras==2.16.0
