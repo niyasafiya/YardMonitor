@@ -463,6 +463,7 @@
       <button data-view="safety" data-label="People &amp; Safety"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg>People &amp; Safety</button>
       <button data-view="vehicle" data-label="Vehicle &amp; Logistics"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l2-5h11l3 5"/><path d="M3 13h18v4H3z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></svg>Vehicle &amp; Logistics</button>
       <button data-view="material" data-label="Material &amp; DN"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h12l4 4v12H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>Material &amp; DN</button>
+      <button data-view="asset" data-label="Asset Tracking"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12l8.73-5.04M12 22V12"/></svg>Asset Tracking</button>
       <div class="nav-label">System</div>
       <button data-view="cameras" data-label="Cameras"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l4-2 11 5v7l-11 5-4-2z"/><circle cx="9" cy="12" r="2.4"/></svg>Cameras</button>
       <div class="nav-label">AI Detection</div>
@@ -748,7 +749,14 @@
                     <span class="sb-tag" id="gate-scan-tag">SCANNING…</span>
                   </div>
                 </div></div>
-                <div class="cam-meta"><span class="name">Main Gate — In</span><span class="id">CAM-01</span><span class="right"><span class="live"><span class="dot live"></span>LIVE</span><button class="cam-upload-btn active" id="cam-upload-toggle-gate" onclick="camUploadToggle('gate')" title="Upload a gate video &amp; scan for plates">↑ ANPR Scan</button><button class="popout" data-win="Main Gate — In" data-id="CAM-01" title="Pop out">⧉</button></span></div>
+                <div class="cam-meta"><span class="name">Main Gate — In</span><span class="id">CAM-01</span><span class="right"><span class="live"><span class="dot live"></span>LIVE</span><button class="cam-upload-btn" id="gate-phone-btn" onclick="gatePhoneToggle()" title="Use a phone as the gate camera — live vehicle &amp; plate detection">◉ Phone Cam</button><button class="cam-upload-btn active" id="cam-upload-toggle-gate" onclick="camUploadToggle('gate')" title="Upload a gate video &amp; scan for plates">↑ ANPR Scan</button><button class="popout" data-win="Main Gate — In" data-id="CAM-01" title="Pop out">⧉</button></span></div>
+                <!-- Phone-camera source bar (hidden until 'Phone Cam' is toggled) -->
+                <div id="gate-phone-bar" style="display:none;padding:8px 10px;border-top:1px solid var(--hair);gap:6px;align-items:center;flex-wrap:wrap">
+                  <input id="live-anpr-url" placeholder="0  (USB webcam)   ·   rtsp://192.168.1.5:8554/live"
+                         style="flex:1;min-width:150px;background:var(--bg-tile);border:1px solid var(--hair);color:var(--text);border-radius:6px;padding:6px 9px;font-family:var(--mono);font-size:11.5px">
+                  <button class="btn sm pri" id="live-anpr-btn" onclick="liveAnprToggle()">● Go Live</button>
+                  <span id="live-anpr-status" class="note" style="margin:0;flex-basis:100%;font-size:10px;color:var(--muted-2)">iPhone: iVCam/EpocCam over USB → type 0 · or IP Camera Lite → rtsp://&lt;iphone-ip&gt;:8554/live (same Wi-Fi)</span>
+                </div>
                 <!-- Upload option under the camera (open by default on this tab) -->
                 <div class="cam-upload-panel open" id="cam-upload-panel-gate">
                   <div class="cam-dz" id="gate-anpr-zone"
@@ -1284,24 +1292,200 @@
       <!-- MATERIAL -->
       <section class="view" id="view-material">
         <div class="crumb">Warehouse North <b>/ Material &amp; DN</b></div>
-        <div class="view-head"><div><div class="eyebrow">Module</div><h1>Material &amp; Delivery Notes</h1><p>Capture each DN, verify the count against computer vision, and keep an audit clip.</p></div></div>
-        <div class="grid col-3" style="margin-bottom:15px">
-          <div class="panel"><div class="panel-head"><h3>DN capture &amp; OCR <span class="fr">FR-M1</span></h3><span class="sub">Bay 2</span></div>
-            <div class="panel-body"><div class="doc"><div class="h">DELIVERY NOTE</div><div class="line"><span>DN No.</span><b class="hl">DN-88231</b></div><div class="line"><span>Supplier</span><b>Meridian Logistics</b></div><div class="line"><span>Date</span><b>09 Jun 2026</b></div><div class="line"><span>Item</span><b>Pallet — SKU 4471</b></div><div class="line"><span>Qty listed</span><b class="hl">8</b></div></div><p class="note">OCR confidence 0.95 · fields auto-extracted</p></div></div>
-          <div class="panel span-2" style="border-color:rgba(240,169,59,.4)"><div class="panel-head"><h3>Count verification <span class="fr">FR-M2</span></h3><span class="sub">vision vs DN</span></div>
-            <div class="panel-body" style="display:flex;gap:22px;flex-wrap:wrap;align-items:center">
-              <div class="cam" style="border:0;width:252px;flex:0 0 auto"><div class="scene" style="height:136px;background:linear-gradient(180deg,#0a111a,#0e1620)"><div class="scanline"></div><div class="bb" style="left:12%;top:30%;width:28px;height:58px"><span class="tag">1</span></div><div class="bb" style="left:30%;top:30%;width:28px;height:58px"><span class="tag">2</span></div><div class="bb" style="left:48%;top:30%;width:28px;height:58px"><span class="tag">3</span></div><div class="bb" style="left:66%;top:30%;width:28px;height:58px"><span class="tag">…6</span></div></div></div>
-              <div style="flex:1;min-width:200px"><div style="display:flex;gap:26px;align-items:center"><div><div class="lab" style="color:var(--muted);font-size:11px">Vision count</div><div style="font-family:var(--mono);font-size:32px;color:var(--watch)">6</div></div><div style="font-size:22px;color:var(--muted-2)">≠</div><div><div class="lab" style="color:var(--muted);font-size:11px">DN listed</div><div style="font-family:var(--mono);font-size:32px">8</div></div></div>
-                <span class="chip crit" style="margin-top:11px">● Mismatch — short by 2</span>
-                <div style="display:flex;gap:7px;margin-top:13px"><button class="btn pri sm">Open audit clip</button><button class="btn sm">Recount</button><button class="btn ghost sm">Accept variance</button></div></div></div></div>
+        <div class="view-head"><div><div class="eyebrow">AI Module</div><h1>Material Inspection &amp; Access Control</h1><p>Point a camera at the load, detect what the vehicle is carrying, and grant entry only when every material is on the yard's allow-list.</p></div></div>
+
+        <!-- Cargo inspection analyzer -->
+        <div class="panel" style="margin-bottom:15px">
+          <div class="panel-head"><h3>Cargo Inspection <span class="fr">LIVE AI</span></h3><span class="sub" id="mt-status">checking model…</span></div>
+          <div class="panel-body">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;flex-wrap:wrap">
+              <label class="note" style="margin:0">Vehicle / DN (optional)</label>
+              <input id="mt-plate" placeholder="e.g. KA09AB1234 or DN-88231"
+                     style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:7px 10px;color:var(--ink);font-family:var(--mono);font-size:12px;width:230px">
+            </div>
+            <div class="an-uploader" id="mt-uploader"
+                 ondragover="event.preventDefault();this.classList.add('drag-over')"
+                 ondragleave="this.classList.remove('drag-over')"
+                 ondrop="mtDrop(event)"
+                 onclick="document.getElementById('mt-file').click()">
+              <input type="file" id="mt-file" accept="image/*,video/*" hidden>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div class="an-uz-title">Drop a photo or clip of the vehicle's load — or click to browse</div>
+              <div class="an-uz-sub">Detects the items inside the vehicle, names each material, and decides GRANT / DENY against the allow-list below.</div>
+              <div class="an-uz-formats">MP4 · MOV · AVI · WEBM · JPG · PNG</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+              <span id="mt-fname" class="note" style="margin:0;flex:1">No file selected yet.</span>
+              <button class="btn sm pri" id="mt-detect" onclick="mtDetect()" disabled>Inspect &amp; Decide</button>
+            </div>
+            <div id="mt-loading" class="note" style="display:none">Inspecting… first run downloads the object model (~6 MB), please wait.</div>
+            <div id="mt-result" style="display:none;margin-top:13px">
+              <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div class="an-media">
+                  <video id="mt-video" autoplay loop muted playsinline></video>
+                  <img id="mt-img" alt="annotated result">
+                  <span class="an-media-lbl" id="mt-media-lbl"></span>
+                </div>
+                <div style="flex:1;min-width:240px">
+                  <div id="mt-decision"></div>
+                  <div id="mt-items" style="margin-top:12px"></div>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:12px">
+                <button class="btn sm ghost" onclick="mtClear()">✕ Clear</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="panel"><div class="panel-head"><h3>Delivery audit trail <span class="fr">FR-M3</span></h3><span class="sub">30s clip linked to each DN</span></div>
-          <table><thead><tr><th>DN number</th><th>Supplier</th><th>Time</th><th>Vision / DN</th><th>Result</th><th>Audit clip</th></tr></thead><tbody>
-            <tr><td class="m hl">DN-88231</td><td>Meridian Logistics</td><td class="mono">09:38</td><td class="m">6 / 8</td><td><span class="chip crit">Mismatch</span></td><td><button class="btn sm">▶ 0:30 clip</button></td></tr>
-            <tr><td class="m">DN-88224</td><td>Coastal Freight</td><td class="mono">09:02</td><td class="m">12 / 12</td><td><span class="chip ok">Match</span></td><td><button class="btn sm">▶ 0:30 clip</button></td></tr>
-            <tr><td class="m">DN-88219</td><td>Meridian Logistics</td><td class="mono">08:31</td><td class="m">20 / 20</td><td><span class="chip ok">Match</span></td><td><button class="btn sm">▶ 0:30 clip</button></td></tr>
-            <tr><td class="m">DN-88207</td><td>Vector Supply</td><td class="mono">08:04</td><td class="m">5 / 5</td><td><span class="chip ok">Match</span></td><td><button class="btn sm">▶ 0:30 clip</button></td></tr>
-          </tbody></table></div>
+
+        <div class="grid col-3" style="margin-bottom:15px">
+          <!-- Allowed materials list -->
+          <div class="panel span-2"><div class="panel-head"><h3>Allowed materials <span class="fr">FR-M1</span></h3><span class="sub" id="mt-allowed-count">— permitted</span></div>
+            <div class="panel-body">
+              <p class="note" style="margin-top:0">Only vehicles whose <b>entire</b> load matches this list are granted entry. Anything detected that is not listed → entry denied.</p>
+              <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
+                <input id="mt-new-mat" placeholder="material name (e.g. pallet)"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:8px 10px;color:var(--ink);font-size:12px;flex:1;min-width:160px">
+                <input id="mt-new-note" placeholder="note (optional)"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:8px 10px;color:var(--ink);font-size:12px;flex:1;min-width:140px">
+                <button class="btn sm pri" onclick="mtAddAllowed()">+ Add</button>
+              </div>
+              <div id="mt-allowed-tbody"><p class="note">Loading…</p></div>
+            </div>
+          </div>
+          <!-- Decision summary -->
+          <div class="panel"><div class="panel-head"><h3>Last decision <span class="fr">FR-M2</span></h3><span class="sub">gate verdict</span></div>
+            <div class="panel-body" style="text-align:center">
+              <div id="mt-verdict-big" style="font-family:var(--mono);font-size:30px;margin:14px 0 6px;color:var(--muted-2)">—</div>
+              <div id="mt-verdict-sub" class="note">Inspect a load to see the entry decision.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audit trail -->
+        <div class="panel"><div class="panel-head"><h3>Inspection audit trail <span class="fr">FR-M3</span></h3><span class="sub">every gate decision</span>
+          <button class="btn sm ghost" style="margin-left:auto" onclick="loadMaterialLog()">Refresh</button>
+          <button class="btn sm ghost" onclick="clearMaterialLog()">Clear</button></div>
+          <div class="panel-body"><div id="mt-log"><p class="note">No inspections yet — run one above.</p></div></div>
+        </div>
+      </section>
+
+      <!-- ================= ASSET TRACKING ================= -->
+      <section class="view" id="view-asset">
+        <div class="crumb">Warehouse North <b>/ Asset Tracking</b></div>
+        <div class="view-head"><div><div class="eyebrow">AI Module</div><h1>Asset Tracking &amp; Recognition</h1><p>Point a camera at the truck bed, detect every asset on board, and match each one to the company asset register — so you know exactly what is arriving or leaving, and which tagged assets they are.</p></div></div>
+
+        <!-- Mode tabs -->
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="btn sm pri" id="at-tab-upload" onclick="atSwitchMode('upload')">⇪ Upload &amp; Analyze</button>
+          <button class="btn sm ghost" id="at-tab-live" onclick="atSwitchMode('live')">◉ Live Feed</button>
+        </div>
+
+        <!-- ---------- Upload mode ---------- -->
+        <div id="at-mode-upload">
+          <div class="panel" style="margin-bottom:15px">
+            <div class="panel-head"><h3>Asset Detection <span class="fr">LIVE AI</span></h3><span class="sub" id="at-status">checking model…</span></div>
+            <div class="panel-body">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;flex-wrap:wrap">
+                <label class="note" style="margin:0">Truck / DN (optional)</label>
+                <input id="at-plate" placeholder="e.g. KA09AB1234 or DN-88231"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:7px 10px;color:var(--ink);font-family:var(--mono);font-size:12px;width:230px">
+              </div>
+              <div class="an-uploader" id="at-uploader"
+                   ondragover="event.preventDefault();this.classList.add('drag-over')"
+                   ondragleave="this.classList.remove('drag-over')"
+                   ondrop="atDrop(event)"
+                   onclick="document.getElementById('at-file').click()">
+                <input type="file" id="at-file" accept="image/*,video/*" hidden>
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12l8.73-5.04M12 22V12"/></svg>
+                <div class="an-uz-title">Drop a photo or clip of the truck's load — or click to browse</div>
+                <div class="an-uz-sub">Detects each asset, names its category, and matches it to the registered assets below.</div>
+                <div class="an-uz-formats">MP4 · MOV · AVI · WEBM · JPG · PNG</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+                <span id="at-fname" class="note" style="margin:0;flex:1">No file selected yet.</span>
+                <button class="btn sm pri" id="at-detect" onclick="atDetect()" disabled>Detect Assets</button>
+              </div>
+              <div id="at-loading" class="note" style="display:none">Detecting… first run downloads the object model (~6 MB), please wait.</div>
+              <div id="at-result" style="display:none;margin-top:13px">
+                <div style="display:flex;gap:16px;flex-wrap:wrap">
+                  <div class="an-media">
+                    <video id="at-video" autoplay loop muted playsinline></video>
+                    <img id="at-img" alt="annotated result">
+                    <span class="an-media-lbl" id="at-media-lbl"></span>
+                  </div>
+                  <div style="flex:1;min-width:240px">
+                    <div id="at-summary"></div>
+                    <div id="at-items" style="margin-top:12px"></div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:12px">
+                  <button class="btn sm ghost" onclick="atClear()">✕ Clear</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- Live mode ---------- -->
+        <div id="at-mode-live" style="display:none">
+          <div class="panel" style="margin-bottom:15px">
+            <div class="panel-head"><h3>Live Asset Feed <span class="fr">LIVE AI</span></h3><span class="sub" id="at-live-status">webcam idle</span></div>
+            <div class="panel-body">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;flex-wrap:wrap">
+                <label class="note" style="margin:0">Truck / DN (optional)</label>
+                <input id="at-live-plate" placeholder="e.g. KA09AB1234"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:7px 10px;color:var(--ink);font-family:var(--mono);font-size:12px;width:200px">
+                <button class="btn sm pri" id="at-cam-btn" onclick="atToggleCam()">◉ Start Camera</button>
+              </div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div class="an-media" style="position:relative">
+                  <video id="at-vid" autoplay muted playsinline style="display:none"></video>
+                  <img id="at-live-img" alt="live detection" style="display:none">
+                  <div id="at-live-ph" class="note" style="padding:40px 16px;text-align:center">Start the camera to begin live asset recognition.</div>
+                  <span id="at-live-badge" style="display:none;position:absolute;left:8px;bottom:8px;padding:5px 9px;border-radius:6px;font-family:var(--mono);font-size:12px;align-items:center;gap:6px"></span>
+                  <canvas id="at-canvas" style="display:none"></canvas>
+                </div>
+                <div style="flex:1;min-width:240px">
+                  <div id="at-live-items"><p class="note">No assets in view yet.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid col-3" style="margin-bottom:15px">
+          <!-- Registered assets -->
+          <div class="panel span-2"><div class="panel-head"><h3>Registered assets <span class="fr">FR-A1</span></h3><span class="sub" id="at-reg-count">— registered</span></div>
+            <div class="panel-body">
+              <p class="note" style="margin-top:0">A detected asset is matched to a register entry by the <b>item it is recognised as</b>. Add your company's assets and set each one's category to the recognised item (e.g. <span class="mono">bed</span>, <span class="mono">laptop</span>, <span class="mono">suitcase</span>, <span class="mono">bottle</span>).</p>
+              <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
+                <input id="at-new-id" placeholder="asset tag (e.g. GEN-042)"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:8px 10px;color:var(--ink);font-size:12px;flex:1;min-width:130px">
+                <input id="at-new-name" placeholder="name (e.g. Diesel Generator)"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:8px 10px;color:var(--ink);font-size:12px;flex:1;min-width:150px">
+                <input id="at-new-cat" placeholder="recognised item (e.g. bed)"
+                       style="background:var(--bg-elevated);border:1px solid var(--hair);border-radius:7px;padding:8px 10px;color:var(--ink);font-size:12px;flex:1;min-width:120px">
+                <button class="btn sm pri" onclick="atAddAsset()">+ Add</button>
+              </div>
+              <div id="at-reg-tbody"><p class="note">Loading…</p></div>
+            </div>
+          </div>
+          <!-- Last detection summary -->
+          <div class="panel"><div class="panel-head"><h3>Last scan <span class="fr">FR-A2</span></h3><span class="sub">assets seen</span></div>
+            <div class="panel-body" style="text-align:center">
+              <div id="at-count-big" style="font-family:var(--mono);font-size:30px;margin:14px 0 6px;color:var(--muted-2)">—</div>
+              <div id="at-count-sub" class="note">Scan a load to see the assets detected.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audit trail -->
+        <div class="panel"><div class="panel-head"><h3>Asset tracking log <span class="fr">FR-A3</span></h3><span class="sub">every scan</span>
+          <button class="btn sm ghost" style="margin-left:auto" onclick="loadAssetLog()">Refresh</button>
+          <button class="btn sm ghost" onclick="clearAssetLog()">Clear</button></div>
+          <div class="panel-body"><div id="at-log"><p class="note">No scans yet — run one above.</p></div></div>
+        </div>
       </section>
 
       <!-- CAMERAS -->
@@ -1961,6 +2145,16 @@
     }
     if (b && b.dataset.view === 'vehicle') {
       loadVehicleData();
+    }
+    if (b && b.dataset.view === 'material') {
+      loadMaterialStatus();
+      loadAllowedMaterials();
+      loadMaterialLog();
+    }
+    if (b && b.dataset.view === 'asset') {
+      loadAssetStatus();
+      loadAssets();
+      loadAssetLog();
     }
   });
 
@@ -4229,6 +4423,42 @@
     }
   }
 
+  // ─── Live ANPR: use a phone as the Main Gate (CAM-01) camera ──────────────
+  let _liveAnprOn = false;
+  let _gateFeedOrigSrc = null;
+  function gatePhoneToggle() {
+    const bar  = document.getElementById('gate-phone-bar');
+    const btn  = document.getElementById('gate-phone-btn');
+    const show = (bar.style.display === 'none' || !bar.style.display);
+    bar.style.display = show ? 'flex' : 'none';
+    btn.classList.toggle('active', show);
+  }
+  function liveAnprToggle() {
+    const img = document.getElementById('feed-gate');   // reuse the CAM-01 tile feed
+    const btn = document.getElementById('live-anpr-btn');
+    const st  = document.getElementById('live-anpr-status');
+    if (_liveAnprOn) {
+      img.onload = img.onerror = null;
+      img.style.display = '';
+      img.src = _gateFeedOrigSrc || 'http://127.0.0.1:8000/stream/cam01';
+      _liveAnprOn = false;
+      btn.textContent = '● Go Live'; btn.classList.remove('active');
+      if (st) st.textContent = 'stopped — Main Gate feed restored';
+      return;
+    }
+    const url = document.getElementById('live-anpr-url').value.trim();
+    if (!url) { _toast('Enter your phone camera source first (e.g. 0 for USB, or rtsp://…)', 'err'); return; }
+    _gateFeedOrigSrc = img.getAttribute('src');
+    img.style.display = '';
+    const errBox = document.getElementById('err-gate'); if (errBox) errBox.style.display = 'none';
+    if (st) st.textContent = 'connecting to phone camera…';
+    img.onload  = () => { if (st) st.textContent = '● LIVE — detecting vehicles & plates'; };
+    img.onerror = () => { if (st) st.textContent = '⚠ stream error — check source / same Wi-Fi'; };
+    img.src = `${API}/api/v1/vehicles/live?src=${encodeURIComponent(url)}&t=${Date.now()}`;
+    _liveAnprOn = true;
+    btn.textContent = '■ Stop'; btn.classList.add('active');
+  }
+
   function _camPoll(id) {
     const st = _camS(id);
     if (st.pollTimer) clearTimeout(st.pollTimer);
@@ -4901,5 +5131,601 @@
     if (lr) lr.addEventListener('click', loadSafetyLog);
     loadSafetyStatus();
     loadSafetyLog();
+  })();
+
+  // =====================================================================
+  // MATERIAL & DN — cargo inspection + allow-list access control
+  // =====================================================================
+  let _mtFile = null;
+
+  function mtSetFile(f) {
+    if (!(f.type || '').startsWith('video/') && !(f.type || '').startsWith('image/')) {
+      _toast('Please choose a video, photo or screenshot', 'warn');
+      return;
+    }
+    _mtFile = f;
+    const isImg = (f.type || '').startsWith('image/');
+    const up = document.getElementById('mt-uploader');
+    if (up) up.style.display = 'none';
+    _mtShowMedia(f);
+    const fn = document.getElementById('mt-fname');
+    if (fn) fn.textContent = `${isImg ? '🖼' : '▶'} ${f.name}  (${(f.size / 1048576).toFixed(1)} MB) — ready to inspect`;
+    const btn = document.getElementById('mt-detect');
+    if (btn) btn.disabled = false;
+  }
+
+  function mtSelect() {
+    const inp = document.getElementById('mt-file');
+    const f = inp && inp.files[0];
+    if (f) mtSetFile(f);
+  }
+
+  function mtDrop(ev) {
+    ev.preventDefault();
+    const zone = document.getElementById('mt-uploader');
+    if (zone) zone.classList.remove('drag-over');
+    const f = ev.dataTransfer.files[0];
+    if (f) mtSetFile(f);
+  }
+
+  function _mtShowMedia(f) {
+    const res = document.getElementById('mt-result');
+    const vid = document.getElementById('mt-video');
+    const img = document.getElementById('mt-img');
+    const lbl = document.getElementById('mt-media-lbl');
+    const isImg = (f.type || '').startsWith('image/');
+    const url = URL.createObjectURL(f);
+    if (res) res.style.display = 'block';
+    if (isImg) {
+      if (vid) { vid.pause(); vid.style.display = 'none'; }
+      if (img) { img.src = url; img.style.display = 'block'; }
+    } else {
+      if (img) img.style.display = 'none';
+      if (vid) { vid.src = url; vid.style.display = 'block'; vid.play().catch(() => {}); }
+    }
+    if (lbl) lbl.textContent = isImg ? '🖼 Ready — click Inspect' : '▶ Ready — click Inspect';
+    const dec = document.getElementById('mt-decision'); if (dec) dec.innerHTML = '';
+    const it = document.getElementById('mt-items'); if (it) it.innerHTML = '';
+  }
+
+  function mtClear() {
+    _mtFile = null;
+    const res = document.getElementById('mt-result');
+    if (res) res.style.display = 'none';
+    const up = document.getElementById('mt-uploader');
+    if (up) up.style.display = '';
+    const fn = document.getElementById('mt-fname');
+    if (fn) fn.textContent = 'No file selected yet.';
+    const btn = document.getElementById('mt-detect');
+    if (btn) btn.disabled = true;
+    const inp = document.getElementById('mt-file');
+    if (inp) inp.value = '';
+  }
+
+  function mtDetect() {
+    if (!_mtFile) { _toast('Choose a photo or clip of the load first', 'warn'); return; }
+    _mtRun(_mtFile);
+  }
+
+  const _MT_DEC = {
+    GRANTED: { chip: 'ok',   big: 'var(--clear)', txt: '✓ GRANTED' },
+    DENIED:  { chip: 'crit', big: 'var(--alert)', txt: '✕ DENIED' },
+    REVIEW:  { chip: '',     big: 'var(--watch)', txt: '◐ REVIEW' },
+  };
+
+  async function _mtRun(f) {
+    const load = document.getElementById('mt-loading');
+    const res  = document.getElementById('mt-result');
+    const btn  = document.getElementById('mt-detect');
+    const isVid = (f.type || '').startsWith('video');
+    if (btn) { btn.disabled = true; btn.textContent = 'Inspecting…'; }
+    _mtShowMedia(f);
+    if (load) load.style.display = 'block';
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('plate', (document.getElementById('mt-plate') || {}).value || '');
+    try {
+      const r = await fetch(`${API}/api/v1/material/` + (isVid ? 'analyze-video' : 'analyze-image'),
+                            { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'inspection failed');
+      const img = document.getElementById('mt-img');
+      const vid = document.getElementById('mt-video');
+      const lbl = document.getElementById('mt-media-lbl');
+      if (d.annotated_image && img) {
+        if (vid) { vid.pause(); vid.style.display = 'none'; }
+        img.src = d.annotated_image; img.style.display = 'block';
+        if (lbl) lbl.textContent = 'Inspection result';
+      }
+      document.getElementById('mt-decision').innerHTML = _mtDecision(d);
+      document.getElementById('mt-items').innerHTML = _mtItems(d);
+      if (res) res.style.display = 'block';
+      _mtUpdateVerdict(d);
+      if (d.decision === 'DENIED') {
+        _denyAlert('Yard entry denied — disallowed material',
+                   'Material · ' + (d.disallowed || []).join(', '));
+      }
+      loadMaterialLog();
+    } catch (e) {
+      _toast('Material inspection failed: ' + e.message, 'err');
+    } finally {
+      if (load) load.style.display = 'none';
+      if (btn) { btn.disabled = false; btn.textContent = 'Inspect & Decide'; }
+    }
+  }
+
+  function _mtDecision(d) {
+    const s = _MT_DEC[d.decision] || _MT_DEC.REVIEW;
+    const chips = [`<span class="chip ${s.chip}">${s.txt}</span>`,
+                   `<span class="chip">${d.item_count || 0} item${(d.item_count === 1) ? '' : 's'}</span>`];
+    if ((d.disallowed || []).length)
+      chips.push(`<span class="chip crit">Not allowed: ${d.disallowed.join(', ')}</span>`);
+    else if ((d.detected || []).length)
+      chips.push(`<span class="chip ok">All materials permitted</span>`);
+    return `<div style="display:flex;gap:7px;flex-wrap:wrap">${chips.join('')}</div>`;
+  }
+
+  function _mtItems(d) {
+    if (!d.items || !d.items.length) return '<p class="note">No materials detected in the load.</p>';
+    const rows = d.items.map(it =>
+      `<tr><td>${it.material}</td><td class="m">${it.count}</td><td>${
+        it.allowed
+          ? '<span style="color:var(--clear)">✓ allowed</span>'
+          : '<span style="color:var(--alert)">✕ not allowed</span>'
+      }</td></tr>`).join('');
+    return `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--muted)"><th>Material</th><th>Qty</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+
+  function _mtUpdateVerdict(d) {
+    const s = _MT_DEC[d.decision] || _MT_DEC.REVIEW;
+    const big = document.getElementById('mt-verdict-big');
+    const sub = document.getElementById('mt-verdict-sub');
+    if (big) { big.textContent = s.txt; big.style.color = s.big; }
+    if (sub) {
+      sub.textContent = d.decision === 'DENIED'
+        ? 'Disallowed: ' + (d.disallowed || []).join(', ')
+        : d.decision === 'GRANTED'
+          ? 'All ' + (d.item_count || 0) + ' item(s) on the allow-list'
+          : 'No material detected — manual review';
+    }
+  }
+
+  async function loadMaterialStatus() {
+    const el = document.getElementById('mt-status');
+    if (!el) return;
+    try {
+      const r = await fetch(`${API}/api/v1/material/status`);
+      const d = await r.json();
+      el.textContent = d.available
+        ? 'model ready · ' + d.allowed_count + ' materials allowed'
+        : 'model unavailable';
+    } catch { el.textContent = 'backend offline'; }
+  }
+
+  async function loadAllowedMaterials() {
+    const el = document.getElementById('mt-allowed-tbody');
+    if (!el) return;
+    try {
+      const r = await fetch(`${API}/api/v1/material/allowed`);
+      const rows = await r.json();
+      const cnt = document.getElementById('mt-allowed-count');
+      if (cnt) cnt.textContent = rows.length + ' permitted';
+      if (!rows.length) { el.innerHTML = '<p class="note">No materials allowed yet — add some above.</p>'; return; }
+      el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<thead><tr style="text-align:left;color:var(--muted)"><th>Material</th><th>Note</th><th></th></tr></thead><tbody>' +
+        rows.map(x => `<tr><td class="m">${x.label || x.material}</td><td class="note" style="margin:0">${x.note || ''}</td>` +
+          `<td style="text-align:right"><button class="btn sm ghost" onclick="mtDeleteAllowed('${x.material.replace(/'/g, "\\'")}')">✕</button></td></tr>`).join('') +
+        '</tbody></table>';
+    } catch { el.innerHTML = '<p class="note">Backend offline.</p>'; }
+  }
+
+  async function mtAddAllowed() {
+    const mat = (document.getElementById('mt-new-mat') || {}).value.trim();
+    const note = (document.getElementById('mt-new-note') || {}).value.trim();
+    if (!mat) { _toast('Enter a material name', 'warn'); return; }
+    try {
+      const r = await fetch(`${API}/api/v1/material/allowed`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ material: mat, note: note }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'add failed'); }
+      document.getElementById('mt-new-mat').value = '';
+      document.getElementById('mt-new-note').value = '';
+      loadAllowedMaterials();
+      loadMaterialStatus();
+      _toast('Material added to allow-list', 'ok');
+    } catch (e) { _toast('Add failed: ' + e.message, 'err'); }
+  }
+
+  async function mtDeleteAllowed(material) {
+    try {
+      await fetch(`${API}/api/v1/material/allowed/` + encodeURIComponent(material), { method: 'DELETE' });
+      loadAllowedMaterials();
+      loadMaterialStatus();
+    } catch (e) { _toast('Delete failed: ' + e.message, 'err'); }
+  }
+
+  async function loadMaterialLog() {
+    const el = document.getElementById('mt-log');
+    if (!el) return;
+    try {
+      const r = await fetch(`${API}/api/v1/material/log?limit=30`);
+      const rows = await r.json();
+      if (!rows.length) { el.innerHTML = '<p class="note">No inspections yet — run one above.</p>'; return; }
+      el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<thead><tr style="text-align:left;color:var(--muted)"><th>Time</th><th>Vehicle / DN</th><th>Materials</th><th>Result</th><th></th></tr></thead><tbody>' +
+        rows.map(x => {
+          const s = _MT_DEC[x.decision] || _MT_DEC.REVIEW;
+          return `<tr><td class="m">${_fmtLocalTs(x.timestamp)}</td>` +
+            `<td class="mono">${x.plate || '—'}</td>` +
+            `<td>${x.detected || '—'}${x.disallowed ? ' <span style="color:var(--alert)">(⨯ ' + x.disallowed + ')</span>' : ''}</td>` +
+            `<td><span class="chip ${s.chip}">${x.decision}</span></td>` +
+            `<td style="text-align:right"><button class="btn sm ghost" onclick="deleteMaterialLog(${x.id})">✕</button></td></tr>`;
+        }).join('') + '</tbody></table>';
+    } catch { el.innerHTML = '<p class="note">Backend offline.</p>'; }
+  }
+
+  async function deleteMaterialLog(id) {
+    try { await fetch(`${API}/api/v1/material/log/${id}`, { method: 'DELETE' }); loadMaterialLog(); }
+    catch (e) { _toast('Delete failed: ' + e.message, 'err'); }
+  }
+
+  async function clearMaterialLog() {
+    try { await fetch(`${API}/api/v1/material/log`, { method: 'DELETE' }); loadMaterialLog(); }
+    catch (e) { _toast('Clear failed: ' + e.message, 'err'); }
+  }
+
+  (function initMaterial() {
+    const file = document.getElementById('mt-file');
+    if (file) file.addEventListener('change', mtSelect);
+    const nm = document.getElementById('mt-new-mat');
+    if (nm) nm.addEventListener('keydown', e => { if (e.key === 'Enter') mtAddAllowed(); });
+  })();
+
+  // =====================================================================
+  // ASSET TRACKING MODULE
+  // =====================================================================
+  let _atFile = null;
+
+  function atSwitchMode(mode) {
+    const up = document.getElementById('at-mode-upload');
+    const lv = document.getElementById('at-mode-live');
+    const tu = document.getElementById('at-tab-upload');
+    const tl = document.getElementById('at-tab-live');
+    const isLive = mode === 'live';
+    if (up) up.style.display = isLive ? 'none' : '';
+    if (lv) lv.style.display = isLive ? '' : 'none';
+    if (tu) tu.className = 'btn sm ' + (isLive ? 'ghost' : 'pri');
+    if (tl) tl.className = 'btn sm ' + (isLive ? 'pri' : 'ghost');
+    if (!isLive) _atStopCam();   // leaving live → release the webcam
+  }
+
+  // ---------- Upload flow ----------
+  function atDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) { _atFile = f; _atReady(f); }
+  }
+  function atSelect() {
+    const f = document.getElementById('at-file').files[0];
+    if (f) { _atFile = f; _atReady(f); }
+  }
+  function _atReady(f) {
+    document.getElementById('at-fname').textContent = f.name;
+    document.getElementById('at-detect').disabled = false;
+    _atShowMedia(f);
+  }
+  function _atShowMedia(f) {
+    const res = document.getElementById('at-result');
+    const img = document.getElementById('at-img');
+    const vid = document.getElementById('at-video');
+    const lbl = document.getElementById('at-media-lbl');
+    const isImg = (f.type || '').startsWith('image');
+    const url = URL.createObjectURL(f);
+    if (res) res.style.display = 'block';
+    if (isImg) {
+      if (vid) { vid.pause(); vid.style.display = 'none'; }
+      if (img) { img.src = url; img.style.display = 'block'; }
+    } else {
+      if (img) img.style.display = 'none';
+      if (vid) { vid.src = url; vid.style.display = 'block'; vid.play().catch(() => {}); }
+    }
+    if (lbl) lbl.textContent = isImg ? '🖼 Ready — click Detect' : '▶ Ready — click Detect';
+    const s = document.getElementById('at-summary'); if (s) s.innerHTML = '';
+    const it = document.getElementById('at-items'); if (it) it.innerHTML = '';
+  }
+  function atClear() {
+    _atFile = null;
+    const res = document.getElementById('at-result'); if (res) res.style.display = 'none';
+    const fn = document.getElementById('at-fname'); if (fn) fn.textContent = 'No file selected yet.';
+    const btn = document.getElementById('at-detect'); if (btn) btn.disabled = true;
+    const inp = document.getElementById('at-file'); if (inp) inp.value = '';
+  }
+  function atDetect() {
+    if (!_atFile) { _toast('Choose a photo or clip of the load first', 'warn'); return; }
+    _atRun(_atFile);
+  }
+
+  async function _atRun(f) {
+    const load = document.getElementById('at-loading');
+    const res  = document.getElementById('at-result');
+    const btn  = document.getElementById('at-detect');
+    const isVid = (f.type || '').startsWith('video');
+    if (btn) { btn.disabled = true; btn.textContent = 'Detecting…'; }
+    _atShowMedia(f);
+    if (load) load.style.display = 'block';
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('plate', (document.getElementById('at-plate') || {}).value || '');
+    fd.append('source', 'upload');
+    try {
+      const r = await fetch(`${API}/api/v1/asset/` + (isVid ? 'analyze-video' : 'analyze-image'),
+                            { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'detection failed');
+      const img = document.getElementById('at-img');
+      const vid = document.getElementById('at-video');
+      const lbl = document.getElementById('at-media-lbl');
+      if (d.annotated_image && img) {
+        if (vid) { vid.pause(); vid.style.display = 'none'; }
+        img.src = d.annotated_image; img.style.display = 'block';
+        if (lbl) lbl.textContent = 'Detection result';
+      }
+      document.getElementById('at-summary').innerHTML = _atSummary(d);
+      document.getElementById('at-items').innerHTML = _atItems(d);
+      if (res) res.style.display = 'block';
+      _atUpdateCount(d);
+      loadAssetLog();
+    } catch (e) {
+      _toast('Asset detection failed: ' + e.message, 'err');
+    } finally {
+      if (load) load.style.display = 'none';
+      if (btn) { btn.disabled = false; btn.textContent = 'Detect Assets'; }
+    }
+  }
+
+  function _atSummary(d) {
+    const chips = [`<span class="chip">${d.item_count || 0} asset${(d.item_count === 1) ? '' : 's'}</span>`];
+    const known = (d.matched_assets || []).length;
+    if (known) chips.push(`<span class="chip ok">${known} registered</span>`);
+    const gen = (d.detected || []).length - new Set((d.matched_assets || []).map(a => a.category)).size;
+    if (gen > 0) chips.push(`<span class="chip">${gen} unregistered categor${gen === 1 ? 'y' : 'ies'}</span>`);
+    let html = '';
+    if (d.load_type && d.load_type.confident) {
+      html += `<div style="margin-bottom:8px"><span class="chip ok" style="font-size:13px">` +
+        `📦 Load recognised: <b>${d.load_type.label}</b> (${Math.round(d.load_type.conf * 100)}%)</span></div>`;
+    }
+    return html + `<div style="display:flex;gap:7px;flex-wrap:wrap">${chips.join('')}</div>`;
+  }
+
+  function _atItems(d) {
+    if (!d.items || !d.items.length) return '<p class="note">No assets detected in the load.</p>';
+    const rows = d.items.map(it => {
+      const tag = it.registered
+        ? it.matches.map(m => `<span style="color:var(--clear)">${m.asset_id} · ${m.name}</span>`).join('<br>')
+        : '<span style="color:var(--muted)">— not registered</span>';
+      return `<tr><td class="m">${it.category}</td><td class="m">${it.count}</td><td>${tag}</td></tr>`;
+    }).join('');
+    return `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--muted)"><th>Item</th><th>Qty</th><th>Registered asset</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+
+  function _atUpdateCount(d) {
+    const big = document.getElementById('at-count-big');
+    const sub = document.getElementById('at-count-sub');
+    if (big) { big.textContent = (d.item_count || 0); big.style.color = d.item_count ? 'var(--clear)' : 'var(--muted-2)'; }
+    if (sub) {
+      const known = (d.matched_assets || []).length;
+      sub.textContent = d.item_count
+        ? `${d.item_count} asset(s) detected · ${known} matched to the register`
+        : 'No assets detected — try a clearer shot';
+    }
+  }
+
+  // ---------- Register CRUD ----------
+  async function loadAssetStatus() {
+    const el = document.getElementById('at-status');
+    if (!el) return;
+    try {
+      const r = await fetch(`${API}/api/v1/asset/status`);
+      const d = await r.json();
+      if (!d.available) { el.textContent = 'model unavailable'; return; }
+      let txt = 'model ready · ' + d.registered_count + ' assets registered';
+      txt += d.custom_model
+        ? ' · custom load model: ' + (d.custom_classes || []).join(', ')
+        : ' · no custom load model (train for bulk cargo)';
+      el.textContent = txt;
+    } catch { el.textContent = 'backend offline'; }
+  }
+
+  async function loadAssets() {
+    const el = document.getElementById('at-reg-tbody');
+    if (!el) return;
+    try {
+      const r = await fetch(`${API}/api/v1/asset/assets`);
+      const rows = await r.json();
+      const cnt = document.getElementById('at-reg-count');
+      if (cnt) cnt.textContent = rows.length + ' registered';
+      if (!rows.length) { el.innerHTML = '<p class="note">No assets registered yet — add some above.</p>'; return; }
+      el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<thead><tr style="text-align:left;color:var(--muted)"><th>Tag</th><th>Name</th><th>Category</th><th></th></tr></thead><tbody>' +
+        rows.map(x => `<tr><td class="mono">${x.asset_id}</td><td>${x.name}</td>` +
+          `<td class="m">${x.category || '—'}</td>` +
+          `<td style="text-align:right"><button class="btn sm ghost" onclick="atDeleteAsset('${x.asset_id.replace(/'/g, "\\'")}')">✕</button></td></tr>`).join('') +
+        '</tbody></table>';
+    } catch { el.innerHTML = '<p class="note">Backend offline.</p>'; }
+  }
+
+  async function atAddAsset() {
+    const id  = (document.getElementById('at-new-id')   || {}).value.trim();
+    const nm  = (document.getElementById('at-new-name') || {}).value.trim();
+    const cat = (document.getElementById('at-new-cat')  || {}).value.trim();
+    if (!id || !nm) { _toast('Enter an asset tag and name', 'warn'); return; }
+    try {
+      const r = await fetch(`${API}/api/v1/asset/assets`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_id: id, name: nm, category: cat }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'add failed'); }
+      document.getElementById('at-new-id').value = '';
+      document.getElementById('at-new-name').value = '';
+      document.getElementById('at-new-cat').value = '';
+      loadAssets();
+      loadAssetStatus();
+      _toast('Asset added to the register', 'ok');
+    } catch (e) { _toast('Add failed: ' + e.message, 'err'); }
+  }
+
+  async function atDeleteAsset(id) {
+    try {
+      await fetch(`${API}/api/v1/asset/assets/` + encodeURIComponent(id), { method: 'DELETE' });
+      loadAssets();
+      loadAssetStatus();
+    } catch (e) { _toast('Delete failed: ' + e.message, 'err'); }
+  }
+
+  // ---------- Audit log ----------
+  async function loadAssetLog() {
+    const el = document.getElementById('at-log');
+    if (!el) return;
+    try {
+      const r = await fetch(`${API}/api/v1/asset/log?limit=30`);
+      const rows = await r.json();
+      if (!rows.length) { el.innerHTML = '<p class="note">No scans yet — run one above.</p>'; return; }
+      el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<thead><tr style="text-align:left;color:var(--muted)"><th>Time</th><th>Truck / DN</th><th>Src</th><th>Assets</th><th>Matched</th><th></th></tr></thead><tbody>' +
+        rows.map(x =>
+          `<tr><td class="m">${_fmtLocalTs(x.timestamp)}</td>` +
+          `<td class="mono">${x.plate || '—'}</td>` +
+          `<td class="m">${x.source || '—'}</td>` +
+          `<td>${x.detected || '—'} <span class="note" style="margin:0">(${x.item_count})</span></td>` +
+          `<td>${x.matched ? '<span style="color:var(--clear)">' + x.matched + '</span>' : '—'}</td>` +
+          `<td style="text-align:right"><button class="btn sm ghost" onclick="deleteAssetLog(${x.id})">✕</button></td></tr>`
+        ).join('') + '</tbody></table>';
+    } catch { el.innerHTML = '<p class="note">Backend offline.</p>'; }
+  }
+
+  async function deleteAssetLog(id) {
+    try { await fetch(`${API}/api/v1/asset/log/${id}`, { method: 'DELETE' }); loadAssetLog(); }
+    catch (e) { _toast('Delete failed: ' + e.message, 'err'); }
+  }
+
+  async function clearAssetLog() {
+    try { await fetch(`${API}/api/v1/asset/log`, { method: 'DELETE' }); loadAssetLog(); }
+    catch (e) { _toast('Clear failed: ' + e.message, 'err'); }
+  }
+
+  // ---------- Live feed ----------
+  let atCamStream = null, _atLiveTimer = null, _atLiveBusy = false, _atLiveSig = '';
+
+  async function atToggleCam() {
+    if (atCamStream) { _atStopCam(); return; }
+    const btn = document.getElementById('at-cam-btn');
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+        throw new Error('Webcam not supported in this browser');
+      // Prefer a rear/environment camera (truck bed) but fall back to any camera.
+      try {
+        atCamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+      } catch { atCamStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+      const vid = document.getElementById('at-vid');
+      vid.srcObject = atCamStream;
+      await vid.play().catch(() => {});
+      document.getElementById('at-live-ph').style.display = 'none';
+      if (btn) btn.textContent = '■ Stop Camera';
+      document.getElementById('at-live-status').textContent = 'live — scanning…';
+      _atLiveStart();
+    } catch (e) {
+      _toast('Cannot access camera: ' + e.message, 'err');
+    }
+  }
+
+  function _atStopCam() {
+    _atLiveStop();
+    if (atCamStream) { atCamStream.getTracks().forEach(t => t.stop()); atCamStream = null; }
+    const vid = document.getElementById('at-vid'); if (vid) { vid.srcObject = null; vid.style.display = 'none'; }
+    const img = document.getElementById('at-live-img'); if (img) img.style.display = 'none';
+    const ph = document.getElementById('at-live-ph'); if (ph) ph.style.display = 'block';
+    const bd = document.getElementById('at-live-badge'); if (bd) bd.style.display = 'none';
+    const btn = document.getElementById('at-cam-btn'); if (btn) btn.textContent = '◉ Start Camera';
+    const st = document.getElementById('at-live-status'); if (st) st.textContent = 'webcam idle';
+  }
+
+  function _atLiveStart() {
+    _atLiveStop();
+    _atLiveSig = '';
+    _atLiveTimer = setInterval(_atLiveTick, 1300);
+  }
+  function _atLiveStop() {
+    if (_atLiveTimer) { clearInterval(_atLiveTimer); _atLiveTimer = null; }
+    _atLiveBusy = false;
+  }
+
+  async function _atLiveTick() {
+    if (_atLiveBusy) return;
+    const vid = document.getElementById('at-vid');
+    if (!vid || !atCamStream || vid.readyState < 2) return;
+    _atLiveBusy = true;
+    try {
+      const canvas = document.getElementById('at-canvas');
+      canvas.width = vid.videoWidth || 640;
+      canvas.height = vid.videoHeight || 480;
+      canvas.getContext('2d').drawImage(vid, 0, 0);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
+      if (!blob) { _atLiveBusy = false; return; }
+      const fd = new FormData();
+      fd.append('photo', blob, 'live.jpg');
+      const r = await fetch(`${API}/api/v1/asset/analyze-frame?log=false`, { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'frame failed');
+      const img = document.getElementById('at-live-img');
+      if (d.annotated_image && img) { img.src = d.annotated_image; img.style.display = 'block'; }
+      _atLiveBadge(d);
+      document.getElementById('at-live-items').innerHTML = _atItems(d);
+      // Log only when the set of assets in view changes (avoid flooding the trail).
+      const sig = (d.matched_assets || []).map(a => a.asset_id).sort().join(',') + '|' +
+                  (d.detected || []).join(',');
+      if (d.item_count && sig !== _atLiveSig) {
+        _atLiveSig = sig;
+        const lf = new FormData();
+        lf.append('plate', (document.getElementById('at-live-plate') || {}).value || '');
+        lf.append('source', 'live');
+        lf.append('detected', (d.detected || []).join(', '));
+        lf.append('matched', (d.matched_assets || []).map(a => a.asset_id).join(', '));
+        lf.append('item_count', String(d.item_count || 0));
+        try { await fetch(`${API}/api/v1/asset/log`, { method: 'POST', body: lf }); loadAssetLog(); } catch (_) {}
+      } else if (!d.item_count) {
+        _atLiveSig = '';
+      }
+    } catch (e) { /* transient — keep scanning */ }
+    finally { _atLiveBusy = false; }
+  }
+
+  function _atLiveBadge(d) {
+    const b = document.getElementById('at-live-badge');
+    if (!b) return;
+    b.style.display = 'flex';
+    const known = (d.matched_assets || []).length;
+    if (!d.item_count) {
+      b.style.background = 'rgba(0,0,0,.6)'; b.style.color = '#cfe';
+      b.textContent = '🔍 Looking for assets…';
+    } else if (known) {
+      b.style.background = 'rgba(5,150,105,.92)'; b.style.color = '#fff';
+      b.textContent = `✓ ${d.item_count} asset(s) · ${d.matched_assets.map(a => a.asset_id).join(', ')}`;
+    } else {
+      b.style.background = 'rgba(180,120,20,.92)'; b.style.color = '#fff';
+      b.textContent = `● ${d.item_count} asset(s) · ${(d.detected || []).join(', ')} (unregistered)`;
+    }
+  }
+
+  (function initAsset() {
+    const file = document.getElementById('at-file');
+    if (file) file.addEventListener('change', atSelect);
+    const id = document.getElementById('at-new-id');
+    if (id) id.addEventListener('keydown', e => { if (e.key === 'Enter') atAddAsset(); });
   })();
 </script>

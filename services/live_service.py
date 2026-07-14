@@ -1,0 +1,403 @@
+"""
+Live vehicle + number-plate analytics over an MJPEG/RTSP source.
+
+Designed for a phone used as an IP camera (e.g. the "IP Webcam" Android app,
+which exposes  http://<phone-ip>:8080/video ) but works with any RTSP/MJPEG URL
+or a local webcam index.
+
+Performance model (why this stays smooth on CPU):
+  • YOLOv8 + ByteTrack runs on EVERY streamed frame → a stable box + ID follows
+    every vehicle in real time.
+  • OCR (the expensive part) runs on a SEPARATE worker thread, throttled to a
+    couple of the largest vehicles every few frames. The plate text is cached
+    against the ByteTrack id and drawn on that vehicle's box, so each car gets
+    its number as it comes into clear view without ever stalling the video.
+
+The endpoint (routers/vehicles.py::live) simply wraps `live_mjpeg` in a
+StreamingResponse with  multipart/x-mixed-replace  so an <img> tag shows it.
+"""
+from __future__ import annotations
+
+import asyncio
+import os
+import queue
+import threading
+import time
+from typing import Dict, Optional
+
+import cv2
+import numpy as np
+
+import db
+from services.anpr_service import read_plate_crop
+from services.yolo_service import find_plate_contour, get_detector, get_plate_detector
+
+# ── Tunables ────────────────────────────────────────────────────────────────
+_STREAM_W       = 720      # downscale incoming frames to this width before detect/draw
+_DET_IMGSZ      = 416      # YOLO inference size for the live path (smaller = faster)
+_OCR_EVERY      = 4        # only consider OCR every N processed frames
+_OCR_PER_TICK   = 2        # at most this many vehicles queued for OCR per tick
+_MIN_BOX_W      = 70       # skip OCR on vehicles smaller than this (plate unreadable)
+_LOCK_CONF      = 0.75     # stop re-reading a plate once we're this confident
+_JPEG_Q         = 78
+
+_COLORS = {                # BGR
+    "known_auth":   (104, 210, 118),  # green  — plate read + whitelisted
+    "known_deny":   (72,  86, 240),   # red    — plate read, not whitelisted
+    "vehicle":      (245, 191,  66),  # amber/cyan — tracked, plate not read yet
+}
+_INK       = (235, 238, 242)          # near-white label text
+_CHIP_BG   = (20, 22, 26)             # dark chip backing (BGR)
+
+
+def _norm(plate: str) -> str:
+    return plate.upper().replace(" ", "").replace("-", "")
+
+
+def _load_auth_map() -> Dict[str, dict]:
+    """{normalised_plate: {owner, vehicle_type}} from the whitelist."""
+    try:
+        conn = db.get_conn()
+        rows = conn.execute(
+            "SELECT plate, owner, vehicle_type FROM authorized_vehicles"
+        ).fetchall()
+        conn.close()
+        return {_norm(r["plate"]): dict(r) for r in rows}
+    except Exception:
+        return {}
+
+
+# ── OCR worker (runs off the streaming thread) ──────────────────────────────
+def _ocr_worker(q: "queue.Queue", results: dict, auth_map: dict,
+                stop_evt: threading.Event) -> None:
+    while not stop_evt.is_set():
+        try:
+            tid, crop = q.get(timeout=0.4)
+        except queue.Empty:
+            continue
+        if crop is None or crop.size == 0:
+            continue
+        try:
+            res = read_plate_crop(crop)
+        except Exception:
+            res = None
+        if not res:
+            continue
+        conf = float(res["confidence"])
+        prev = results.get(tid)
+        if prev is not None and prev["confidence"] >= conf:
+            continue
+        norm = _norm(res["plate"])
+        auth = auth_map.get(norm)
+        results[tid] = {
+            "plate":      res["plate"],
+            "confidence": conf,
+            "authorized": auth is not None,
+            "owner":      auth["owner"] if auth else "Unknown",
+        }
+
+
+# ── Source open helper ──────────────────────────────────────────────────────
+def _configure(cap: cv2.VideoCapture) -> cv2.VideoCapture:
+    try:
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # always show the latest frame (low latency)
+    except Exception:
+        pass
+    return cap
+
+
+def _open(src: str) -> cv2.VideoCapture:
+    """Open a source, which may be:
+      • a webcam / USB-virtual-camera index  ("0", "1", …)  — iVCam / EpocCam / DroidCam-USB
+      • an rtsp:// URL                        — IP Camera Lite (iOS), CCTV
+      • an http MJPEG URL                     — DroidCam / IP Webcam
+    Prefers TCP for RTSP; for URLs, falls back to OpenCV's default backend when
+    FFMPEG can't open the stream (some phone MJPEG servers need this)."""
+    # TCP transport + a 5 s connect/read timeout so a wrong URL fails fast
+    # (default FFMPEG behaviour hangs ~30 s on an unreachable host).
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
+    s = src.strip()
+    if s.isdigit():
+        idx = int(s)
+        # DirectShow is far more reliable than the default MSMF backend for
+        # USB / virtual webcams like iVCam / EpocCam / DroidCam on Windows.
+        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap.release()
+            cap = cv2.VideoCapture(idx)   # fallback to default backend
+        return _configure(cap)
+
+    cap = cv2.VideoCapture(s, cv2.CAP_FFMPEG)
+    # Only retry with the default backend for HTTP MJPEG — for rtsp:// the default
+    # backend can block ~30 s on an unreachable host, so we let FFMPEG own RTSP.
+    if not cap.isOpened() and s.lower().startswith("http"):
+        cap.release()
+        cap = cv2.VideoCapture(s)   # recovers some phone MJPEG servers
+    return _configure(cap)
+
+
+# ── Drawing ─────────────────────────────────────────────────────────────────
+_FONT = cv2.FONT_HERSHEY_SIMPLEX
+
+
+def _alpha_rect(img, x1, y1, x2, y2, color, alpha):
+    """Blend a solid `color` at `alpha` over a rectangular region (in place)."""
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(img.shape[1], x2), min(img.shape[0], y2)
+    if x2 <= x1 or y2 <= y1:
+        return
+    roi  = img[y1:y2, x1:x2]
+    tint = np.empty_like(roi)
+    tint[:] = color
+    cv2.addWeighted(tint, alpha, roi, 1.0 - alpha, 0, roi)
+
+
+def _corner_box(img, x1, y1, x2, y2, color, thick=2):
+    """Modern ANPR/analytics box: a soft translucent fill, a hairline full frame,
+    and bright rounded corner brackets that read cleanly at any scale."""
+    w, h = x2 - x1, y2 - y1
+    if w <= 0 or h <= 0:
+        return
+    # bracket length scales with the box but never dominates a small one
+    L = int(max(14, min(w, h) * 0.24))
+    L = max(6, min(L, w // 2, h // 2))
+
+    # subtle interior tint so the tracked vehicle "pops" without hiding it
+    _alpha_rect(img, x1, y1, x2, y2, color, 0.10)
+    # hairline full frame for context (drawn faint via a blended pass)
+    frame_ov = img.copy()
+    cv2.rectangle(frame_ov, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
+    cv2.addWeighted(frame_ov, 0.45, img, 0.55, 0, img)
+
+    # bright L-shaped corner brackets with a small rounded joint
+    for cx, cy, dx, dy in ((x1, y1, 1, 1), (x2, y1, -1, 1),
+                           (x1, y2, 1, -1), (x2, y2, -1, -1)):
+        cv2.line(img, (cx, cy), (cx + dx * L, cy), color, thick, cv2.LINE_AA)
+        cv2.line(img, (cx, cy), (cx, cy + dy * L), color, thick, cv2.LINE_AA)
+        cv2.circle(img, (cx, cy), max(1, thick - 1), color, -1, cv2.LINE_AA)
+
+
+def _chip(img, x, y, text, color, fs=0.5):
+    """A professional label pill: dark translucent backing, a colored accent bar,
+    and crisp light text. Anchored with its bottom-left at (x, y)."""
+    (tw, th), bl = cv2.getTextSize(text, _FONT, fs, 1)
+    pad_x, pad_y = 8, 5
+    accent = 4
+    box_w = accent + pad_x * 2 + tw
+    box_h = th + bl + pad_y * 2
+
+    x1 = x
+    y1 = y - box_h
+    fw, fh = img.shape[1], img.shape[0]
+    if x1 + box_w > fw:               # keep on-screen horizontally
+        x1 = fw - box_w
+    x1 = max(0, x1)
+    y1 = max(0, min(y1, fh - box_h))
+    x2, y2 = x1 + box_w, y1 + box_h
+
+    # dark translucent backing → text stays legible over any scene
+    _alpha_rect(img, x1, y1, x2, y2, _CHIP_BG, 0.78)
+    # class-colored accent bar on the left edge
+    cv2.rectangle(img, (x1, y1), (x1 + accent, y2), color, -1, cv2.LINE_AA)
+    cv2.putText(img, text, (x1 + accent + pad_x, y2 - pad_y - bl + 1),
+                _FONT, fs, _INK, 1, cv2.LINE_AA)
+
+
+def _draw(frame: np.ndarray, dets, results: dict, fps: float) -> None:
+    for d in dets:
+        x1, y1, x2, y2 = d.bbox
+        r = results.get(d.track_id) if d.track_id is not None else None
+        if r:
+            color = _COLORS["known_auth"] if r["authorized"] else _COLORS["known_deny"]
+            label = f"{r['plate']}  {'AUTH' if r['authorized'] else 'DENY'}"
+        else:
+            color = _COLORS["vehicle"]
+            tid   = f"#{d.track_id}" if d.track_id is not None else ""
+            label = f"{d.cls_name.capitalize()} {tid}".strip()
+        _corner_box(frame, x1, y1, x2, y2, color, thick=2)
+        # place the label above the box, or just inside the top if there's no room
+        chip_y = y1 - 4 if y1 > 22 else y1 + 22
+        _chip(frame, x1, chip_y, label, color,
+              fs=0.46 if r is None else 0.52)
+
+    # Translucent HUD strip: vehicle count + fps, with a small status dot
+    hud = f"VEHICLES {len(dets)}     {fps:4.1f} FPS"
+    (tw, _), _ = cv2.getTextSize(hud, _FONT, 0.5, 1)
+    bw = tw + 42
+    _alpha_rect(frame, 0, 0, bw, 30, _CHIP_BG, 0.72)
+    cv2.rectangle(frame, (0, 30), (bw, 31), (245, 191, 66), -1, cv2.LINE_AA)  # accent underline
+    cv2.circle(frame, (16, 15), 4, (120, 230, 180), -1, cv2.LINE_AA)          # live dot
+    cv2.putText(frame, hud, (30, 20), _FONT, 0.5, _INK, 1, cv2.LINE_AA)
+
+
+def _process_frame(detector, frame: np.ndarray, frame_idx: int,
+                   results: dict, q: "queue.Queue", fps: float) -> bytes:
+    h, w = frame.shape[:2]
+    if w > _STREAM_W:
+        s = _STREAM_W / w
+        frame = cv2.resize(frame, (_STREAM_W, int(h * s)))
+
+    dets = detector.detect(frame, track=True, imgsz=_DET_IMGSZ) if detector.available else []
+
+    # Throttled OCR: queue the largest few vehicles that still need a read.
+    if dets and frame_idx % _OCR_EVERY == 0:
+        enq = 0
+        for d in sorted(dets, key=lambda d: d.width * d.height, reverse=True):
+            if d.track_id is None or d.width < _MIN_BOX_W:
+                continue
+            r = results.get(d.track_id)
+            if r and r["confidence"] >= _LOCK_CONF:
+                continue
+            crop = detector.get_vehicle_crop(frame, d)
+            if crop.size == 0:
+                continue
+            # Trained plate detector localises the plate tightly; fall back to the
+            # contour heuristic when the model is unavailable or finds nothing.
+            box = None
+            plate_det = get_plate_detector()
+            if plate_det is not None:
+                box = plate_det.detect_best(crop)
+            if box is None:
+                box = find_plate_contour(crop)
+            px1, py1, px2, py2 = box
+            px1, py1 = max(0, px1), max(0, py1)
+            plate_crop = crop[py1:py2, px1:px2]
+            if plate_crop.size == 0:
+                continue
+            try:
+                q.put_nowait((d.track_id, plate_crop.copy()))
+            except queue.Full:
+                break
+            enq += 1
+            if enq >= _OCR_PER_TICK:
+                break
+
+    _draw(frame, dets, results, fps)
+    ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_Q])
+    return jpg.tobytes() if ok else b""
+
+
+def _status_jpg(line1: str, line2: str = "") -> bytes:
+    frame = np.full((360, 640, 3), (14, 18, 24), np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    for txt, yp, sc, col in [
+        (line1, 168, 0.7, (150, 190, 215)),
+        (line2, 200, 0.42, (90, 130, 160)),
+    ]:
+        if not txt:
+            continue
+        tw = cv2.getTextSize(txt, font, sc, 1)[0][0]
+        cv2.putText(frame, txt, ((640 - tw) // 2, yp), font, sc, col, 1, cv2.LINE_AA)
+    ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return jpg.tobytes()
+
+
+# ── Capture thread: always hold only the NEWEST frame ───────────────────────
+class _Grabber:
+    """Continuously reads the source in its own thread and keeps only the latest
+    frame. Because we never queue frames, the processor always works on the most
+    recent image — so detection running slower than the camera can NEVER build up
+    latency (the video stays live instead of lagging further and further behind).
+    Auto-reconnects if the source drops."""
+
+    def __init__(self, src: str):
+        self.src      = src
+        self._lock    = threading.Lock()
+        self._frame   = None
+        self._seq     = 0
+        self._status  = "connecting"     # connecting | live | offline
+        self._stop    = threading.Event()
+        self._thread  = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def latest(self):
+        with self._lock:
+            return self._seq, self._frame, self._status
+
+    def _run(self):
+        cap = None
+        fail = 0
+        while not self._stop.is_set():
+            if cap is None or not cap.isOpened():
+                if cap is not None:
+                    cap.release()
+                with self._lock:
+                    self._status = "connecting"
+                cap = _open(self.src)
+                if not cap.isOpened():
+                    fail += 1
+                    with self._lock:
+                        self._status = "offline"
+                    time.sleep(min(float(fail), 5.0))
+                    continue
+                fail = 0
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                cap.release()
+                cap = None
+                time.sleep(0.2)
+                continue
+            with self._lock:
+                self._frame  = frame
+                self._seq   += 1
+                self._status = "live"
+        if cap is not None:
+            cap.release()
+
+
+# ── Public: async MJPEG generator ───────────────────────────────────────────
+async def live_mjpeg(src: str):
+    boundary  = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+    detector  = get_detector()
+    auth_map  = _load_auth_map()
+    results: Dict[int, dict] = {}
+    q         = queue.Queue(maxsize=4)
+    stop_evt  = threading.Event()
+    worker    = threading.Thread(
+        target=_ocr_worker, args=(q, results, auth_map, stop_evt), daemon=True)
+    worker.start()
+
+    grab = _Grabber(src)
+    grab.start()
+
+    frame_idx  = 0
+    last_seq   = -1
+    fps        = 0.0
+    t_prev     = time.time()
+    last_status_t = 0.0
+    try:
+        while True:
+            seq, frame, status = grab.latest()
+
+            # No fresh frame yet → show a status card (throttled) and yield.
+            if frame is None or seq == last_seq:
+                now = time.time()
+                if status != "live" and now - last_status_t > 0.5:
+                    last_status_t = now
+                    msg = ("Connecting to camera…" if status == "connecting"
+                           else "CAMERA OFFLINE")
+                    sub = src if status == "connecting" else "Check source / same Wi-Fi"
+                    yield boundary + _status_jpg(msg, sub) + b"\r\n"
+                await asyncio.sleep(0.01)     # let newer frames arrive / stay responsive
+                continue
+
+            last_seq = seq
+            frame_idx += 1
+            now = time.time()
+            dt = now - t_prev
+            if dt > 0:
+                fps = 0.85 * fps + 0.15 * (1.0 / dt) if fps else (1.0 / dt)
+            t_prev = now
+
+            jpg = await asyncio.to_thread(
+                _process_frame, detector, frame, frame_idx, results, q, fps)
+            if jpg:
+                yield boundary + jpg + b"\r\n"
+    finally:
+        stop_evt.set()
+        grab.stop()

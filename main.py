@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 import db
-from routers import anpr, biometric, safety, vehicles, streams
+from routers import anpr, asset, biometric, material, safety, vehicles, streams
 
 app = FastAPI(
     title="Sentinel AI Backend",
@@ -73,6 +73,8 @@ app.include_router(streams.router,   tags=["Streams"])
 app.include_router(anpr.router,      prefix="/api/v1/anpr",      tags=["ANPR"])
 app.include_router(biometric.router, prefix="/api/v1/biometric", tags=["Biometric"])
 app.include_router(safety.router,    prefix="/api/v1/safety",    tags=["Safety"])
+app.include_router(material.router,  prefix="/api/v1/material",  tags=["Material"])
+app.include_router(asset.router,     prefix="/api/v1/asset",     tags=["Asset"])
 app.include_router(vehicles.router,  prefix="/api/v1/vehicles",  tags=["Vehicles"])
 
 

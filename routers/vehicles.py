@@ -19,10 +19,12 @@ from typing import Optional
 import cv2
 import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Body, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import db
 from services.yolo_service import get_detector
+from services.live_service import live_mjpeg
 
 router  = APIRouter()
 UPLOADS = Path("uploads")
@@ -121,9 +123,10 @@ def _process_demo_video(job_id: str, video_path: str):
         duration_s = total / fps
 
         # ── Sampling strategy ───────────────────────────────────────────
-        # Process every frame up to 240 frames for short clips;
-        # for longer videos skip frames to stay within budget.
-        max_frames = 240
+        # Cap the number of frames actually run through YOLO. 120 frames is
+        # plenty for stable ByteTrack IDs on a short clip while roughly halving
+        # inference time vs the old 240-frame budget.
+        max_frames = 120
         step       = max(1, int(total / max_frames)) if total > max_frames else 1
 
         # ── Per-track state  (mirrors YardMonitor's _TrackState) ────────
@@ -212,8 +215,11 @@ def _process_demo_video(job_id: str, video_path: str):
                          (240, 169, 59), 1)
                 best_frame_annot = ann
 
-            _update_demo_job(job_id, "processing",
-                             min(99, frame_idx / total * 100), None, None)
+            # Throttle progress writes — one SQLite commit per sampled frame
+            # dominated the runtime. Update roughly every 8th sampled frame.
+            if sampled % 8 == 0:
+                _update_demo_job(job_id, "processing",
+                                 min(99, frame_idx / total * 100), None, None)
 
         cap.release()
 
@@ -421,6 +427,26 @@ def vehicle_stats():
         "over_sla":   over_sla,
         "avg_minutes": avg,
     }
+
+
+# ---------------------------------------------------------------------------
+# Live analytics  (phone IP-camera → real-time vehicle + plate detection)
+# ---------------------------------------------------------------------------
+
+@router.get("/live")
+async def live(
+    src: str = Query(
+        ...,
+        description="Phone IP-camera stream, e.g. http://192.168.1.5:8080/video "
+                    "(IP Webcam app), an rtsp:// URL, or a webcam index like 0.",
+    ),
+):
+    """Stream live annotated MJPEG: YOLOv8+ByteTrack vehicle boxes with plate
+    numbers read opportunistically per track. Point an <img> tag at this URL."""
+    return StreamingResponse(
+        live_mjpeg(src),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
 
 
 # ---------------------------------------------------------------------------
