@@ -637,8 +637,16 @@ async def upload_video(
     suffix     = Path(video.filename or "video.mp4").suffix or ".mp4"
     video_path = UPLOADS / f"anpr_{job_id}{suffix}"
     UPLOADS.mkdir(parents=True, exist_ok=True)
-    contents   = await video.read()
-    await asyncio.to_thread(video_path.write_bytes, contents)
+
+    # Stream the upload straight to disk in 1 MB chunks instead of buffering the
+    # whole file in RAM (`await video.read()` allocates the entire video at once —
+    # slow and memory-heavy for large phone clips). shutil.copyfileobj overlaps
+    # read/write and keeps memory flat regardless of file size.
+    import shutil
+    def _save():
+        with open(video_path, "wb") as out:
+            shutil.copyfileobj(video.file, out, length=1024 * 1024)
+    await asyncio.to_thread(_save)
 
     conn = db.get_conn()
     conn.execute(

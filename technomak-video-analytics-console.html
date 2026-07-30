@@ -1899,9 +1899,27 @@
     fd.append('video', anprFile);
 
     try {
-      const res = await fetch(`${API}/api/v1/anpr/upload`, { method: 'POST', body: fd });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      // XHR (not fetch) so we can show real upload progress — a large clip no
+      // longer looks frozen, and a stall at 100% tells you the wait is server-side.
+      const data = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API}/api/v1/anpr/upload`);
+        xhr.upload.onprogress = (ev) => {
+          if (!ev.lengthComputable) return;
+          const pct = Math.round(ev.loaded / ev.total * 100);
+          btn.textContent = pct < 100 ? `Uploading ${pct}%` : 'Finalising…';
+          if (_lbl && _lbl.textContent.indexOf('unavailable') === -1)
+            _lbl.textContent = pct < 100 ? `▶ Uploading ${pct}%` : '▶ Finalising upload…';
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); }
+            catch (err) { reject(new Error('Bad server response')); }
+          } else { reject(new Error(xhr.responseText || ('HTTP ' + xhr.status))); }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(fd);
+      });
       anprJobId = data.job_id;
       btn.textContent = 'Scanning…';
       document.getElementById('anpr-status-lbl').textContent = 'Processing';
