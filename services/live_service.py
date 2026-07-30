@@ -34,11 +34,20 @@ from services.yolo_service import find_plate_contour, get_detector, get_plate_de
 
 # ── Tunables ────────────────────────────────────────────────────────────────
 _STREAM_W       = 720      # downscale incoming frames to this width before detect/draw
-_DET_IMGSZ      = 416      # YOLO inference size for the live path (smaller = faster)
-_OCR_EVERY      = 4        # only consider OCR every N processed frames
-_OCR_PER_TICK   = 2        # at most this many vehicles queued for OCR per tick
-_MIN_BOX_W      = 70       # skip OCR on vehicles smaller than this (plate unreadable)
+_DET_IMGSZ      = 480      # YOLO inference size (raised 416→480: better recall on small /
+                           # distant / blurred vehicles, without the frame-rate hit of 512 —
+                           # and keeping the rate high matters most for FAST movers, which
+                           # cross the scene in few frames)
+_DET_CONF       = 0.30     # detection confidence (lowered from the 0.45 default): a
+                           # motion-blurred fast car scores low, so a high bar drops it
+_TRACKER_CFG    = "models/bytetrack_fast.yaml"  # keeps fast movers' ids stable
+_OCR_EVERY      = 3        # consider OCR every N processed frames (was 4 — faster cars
+                           # spend fewer frames on screen, so read more often)
+_OCR_PER_TICK   = 3        # at most this many vehicles queued for OCR per tick
+_MIN_BOX_W      = 60       # skip OCR on vehicles smaller than this (plate unreadable)
 _LOCK_CONF      = 0.75     # stop re-reading a plate once we're this confident
+_FAST_SPEED     = 14.0     # box-centre px/frame above which a track counts as "fast"
+_PRUNE_AFTER    = 300      # forget a track not seen for this many frames (~free memory)
 _JPEG_Q         = 78
 
 _COLORS = {                # BGR
@@ -70,15 +79,38 @@ def _load_auth_map() -> Dict[str, dict]:
 # ── OCR worker (runs off the streaming thread) ──────────────────────────────
 def _ocr_worker(q: "queue.Queue", results: dict, auth_map: dict,
                 stop_evt: threading.Event) -> None:
+    """Consumes the sharpest VEHICLE crop per track, localises the plate inside it,
+    then OCRs. Plate localisation (a YOLO pass) and OCR both run here, off the
+    streaming thread, so heavy work never stalls the live video — critical for
+    keeping up with fast movers."""
     while not stop_evt.is_set():
         try:
-            tid, crop = q.get(timeout=0.4)
+            tid, veh_crop = q.get(timeout=0.4)
         except queue.Empty:
             continue
-        if crop is None or crop.size == 0:
+        if veh_crop is None or veh_crop.size == 0:
             continue
+
+        # Localise the plate inside the vehicle crop. Trained detector first, with
+        # the contour heuristic as fallback (matches the previous behaviour, but now
+        # off the streaming thread).
+        box = None
+        plate_det = get_plate_detector()
+        if plate_det is not None:
+            try:
+                box = plate_det.detect_best(veh_crop)
+            except Exception:
+                box = None
+        if box is None:
+            box = find_plate_contour(veh_crop)
+        px1, py1, px2, py2 = box
+        px1, py1 = max(0, px1), max(0, py1)
+        plate_crop = veh_crop[py1:py2, px1:px2]
+        if plate_crop.size == 0:
+            continue
+
         try:
-            res = read_plate_crop(crop)
+            res = read_plate_crop(plate_crop)
         except Exception:
             res = None
         if not res:
@@ -203,9 +235,26 @@ def _chip(img, x, y, text, color, fs=0.5):
                 _FONT, fs, _INK, 1, cv2.LINE_AA)
 
 
-def _draw(frame: np.ndarray, dets, results: dict, fps: float) -> None:
+def _plate_zone_sharpness(crop: np.ndarray) -> float:
+    """Laplacian variance of the plate zone (bottom ~55 % of a vehicle crop).
+    Higher = sharper. Used to keep the least motion-blurred crop per track so OCR
+    reads a crisp plate off a fast car instead of a smeared one."""
+    h = crop.shape[0]
+    zone = crop[int(h * 0.45):, :]
+    if zone.size == 0:
+        zone = crop
+    gray = cv2.cvtColor(zone, cv2.COLOR_BGR2GRAY) if zone.ndim == 3 else zone
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def _draw(frame: np.ndarray, dets, results: dict, meta: dict, fps: float) -> None:
+    fast_n = 0
     for d in dets:
         x1, y1, x2, y2 = d.bbox
+        m = meta.get(d.track_id) if d.track_id is not None else None
+        is_fast = bool(m and m["speed"] >= _FAST_SPEED)
+        if is_fast:
+            fast_n += 1
         r = results.get(d.track_id) if d.track_id is not None else None
         if r:
             color = _COLORS["known_auth"] if r["authorized"] else _COLORS["known_deny"]
@@ -214,14 +263,17 @@ def _draw(frame: np.ndarray, dets, results: dict, fps: float) -> None:
             color = _COLORS["vehicle"]
             tid   = f"#{d.track_id}" if d.track_id is not None else ""
             label = f"{d.cls_name.capitalize()} {tid}".strip()
+            if is_fast:
+                label += "  » FAST"
         _corner_box(frame, x1, y1, x2, y2, color, thick=2)
         # place the label above the box, or just inside the top if there's no room
         chip_y = y1 - 4 if y1 > 22 else y1 + 22
         _chip(frame, x1, chip_y, label, color,
               fs=0.46 if r is None else 0.52)
 
-    # Translucent HUD strip: vehicle count + fps, with a small status dot
-    hud = f"VEHICLES {len(dets)}     {fps:4.1f} FPS"
+    # Translucent HUD strip: vehicle count (+ fast movers) + fps, with a status dot
+    fast_txt = f"  ({fast_n} FAST)" if fast_n else ""
+    hud = f"VEHICLES {len(dets)}{fast_txt}     {fps:4.1f} FPS"
     (tw, _), _ = cv2.getTextSize(hud, _FONT, 0.5, 1)
     bw = tw + 42
     _alpha_rect(frame, 0, 0, bw, 30, _CHIP_BG, 0.72)
@@ -231,48 +283,82 @@ def _draw(frame: np.ndarray, dets, results: dict, fps: float) -> None:
 
 
 def _process_frame(detector, frame: np.ndarray, frame_idx: int,
-                   results: dict, q: "queue.Queue", fps: float) -> bytes:
+                   results: dict, meta: dict, q: "queue.Queue", fps: float) -> bytes:
     h, w = frame.shape[:2]
     if w > _STREAM_W:
         s = _STREAM_W / w
         frame = cv2.resize(frame, (_STREAM_W, int(h * s)))
+    fw = frame.shape[1]
 
-    dets = detector.detect(frame, track=True, imgsz=_DET_IMGSZ) if detector.available else []
+    dets = (detector.detect(frame, track=True, imgsz=_DET_IMGSZ,
+                            conf=_DET_CONF, tracker=_TRACKER_CFG)
+            if detector.available else [])
 
-    # Throttled OCR: queue the largest few vehicles that still need a read.
+    # ── Per-track update: velocity (for prioritising / labelling fast movers) and
+    #    the SHARPEST plate crop seen so far. Reading OCR off the crispest frame is
+    #    what makes a fast car's plate legible — the instantaneous frame is usually
+    #    motion-blurred. ─────────────────────────────────────────────────────────
+    for d in dets:
+        tid = d.track_id
+        if tid is None:
+            continue
+        cx, cy = d.center
+        m = meta.get(tid)
+        if m is None:
+            m = meta[tid] = {"cx": cx, "cy": cy, "speed": 0.0,
+                             "best_crop": None, "best_sharp": -1.0,
+                             "last_seen": frame_idx}
+        else:
+            disp = float(np.hypot(cx - m["cx"], cy - m["cy"]))
+            m["speed"] = 0.6 * m["speed"] + 0.4 * disp   # smoothed px/frame
+            m["cx"], m["cy"], m["last_seen"] = cx, cy, frame_idx
+
+        r = results.get(tid)
+        if (r is None or r["confidence"] < _LOCK_CONF) and d.width >= _MIN_BOX_W:
+            crop = detector.get_vehicle_crop(frame, d)
+            if crop.size:
+                sharp = _plate_zone_sharpness(crop)
+                if sharp > m["best_sharp"]:
+                    # copy: _draw() will paint over `frame` after this
+                    m["best_sharp"] = sharp
+                    m["best_crop"]  = crop.copy()
+
+    # ── Throttled OCR: queue the most URGENT vehicles first — those about to leave
+    #    the frame, fast movers, then large/clear ones — so a car speeding out of
+    #    view still gets read before it's gone. Localisation + OCR run in the worker.
     if dets and frame_idx % _OCR_EVERY == 0:
-        enq = 0
-        for d in sorted(dets, key=lambda d: d.width * d.height, reverse=True):
-            if d.track_id is None or d.width < _MIN_BOX_W:
+        cands = []
+        for d in dets:
+            tid = d.track_id
+            if tid is None:
                 continue
-            r = results.get(d.track_id)
+            r = results.get(tid)
             if r and r["confidence"] >= _LOCK_CONF:
                 continue
-            crop = detector.get_vehicle_crop(frame, d)
-            if crop.size == 0:
+            m = meta.get(tid)
+            if not m or m["best_crop"] is None:
                 continue
-            # Trained plate detector localises the plate tightly; fall back to the
-            # contour heuristic when the model is unavailable or finds nothing.
-            box = None
-            plate_det = get_plate_detector()
-            if plate_det is not None:
-                box = plate_det.detect_best(crop)
-            if box is None:
-                box = find_plate_contour(crop)
-            px1, py1, px2, py2 = box
-            px1, py1 = max(0, px1), max(0, py1)
-            plate_crop = crop[py1:py2, px1:px2]
-            if plate_crop.size == 0:
-                continue
+            edge     = min(m["cx"], fw - m["cx"]) / max(fw, 1)   # 0 at L/R edge … 0.5 centre
+            exit_urg = 1.0 - min(edge / 0.25, 1.0)               # 1 hugging an edge, 0 well inside
+            speed_urg = min(m["speed"] / _FAST_SPEED, 1.0)
+            size_urg  = min(d.width / 300.0, 1.0)
+            score = 2.0 * exit_urg + 1.3 * speed_urg + 0.6 * size_urg
+            cands.append((score, tid, m))
+
+        cands.sort(key=lambda c: c[0], reverse=True)
+        enq = 0
+        for _score, tid, m in cands:
             try:
-                q.put_nowait((d.track_id, plate_crop.copy()))
+                q.put_nowait((tid, m["best_crop"]))
             except queue.Full:
                 break
+            m["best_sharp"] = -1.0   # reset window → collect a fresh sharpest crop next
+            m["best_crop"]  = None
             enq += 1
             if enq >= _OCR_PER_TICK:
                 break
 
-    _draw(frame, dets, results, fps)
+    _draw(frame, dets, results, meta, fps)
     ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_Q])
     return jpg.tobytes() if ok else b""
 
@@ -355,7 +441,8 @@ async def live_mjpeg(src: str):
     boundary  = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
     detector  = get_detector()
     auth_map  = _load_auth_map()
-    results: Dict[int, dict] = {}
+    results: Dict[int, dict] = {}   # track_id → finalised plate read
+    meta:    Dict[int, dict] = {}   # track_id → {cx, cy, speed, best_crop, …}
     q         = queue.Queue(maxsize=4)
     stop_evt  = threading.Event()
     worker    = threading.Thread(
@@ -395,9 +482,17 @@ async def live_mjpeg(src: str):
             t_prev = now
 
             jpg = await asyncio.to_thread(
-                _process_frame, detector, frame, frame_idx, results, q, fps)
+                _process_frame, detector, frame, frame_idx, results, meta, q, fps)
             if jpg:
                 yield boundary + jpg + b"\r\n"
+
+            # Forget tracks that have left the scene so meta/results don't grow
+            # unbounded over a long live session.
+            if frame_idx % 150 == 0 and meta:
+                for tid in [t for t, m in meta.items()
+                            if frame_idx - m["last_seen"] > _PRUNE_AFTER]:
+                    meta.pop(tid, None)
+                    results.pop(tid, None)
     finally:
         stop_evt.set()
         grab.stop()

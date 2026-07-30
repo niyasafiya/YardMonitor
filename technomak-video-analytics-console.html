@@ -10,27 +10,30 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    /* Technomak — black / red / white professional palette */
-    --bg-base:#F3F4F6; --bg-panel:#FFFFFF; --bg-elevated:#FAFAFB; --bg-tile:#F3F4F6;
-    --bg-chrome:#0B0B0D; --bg-mid:#F3F4F6;
-    --hair:#E4E4E7; --hair-soft:rgba(0,0,0,.05);
-    --text:#0B0B0D; --muted:#5B5B66; --muted-2:#9A9AA5;
+    /* Technomak — white / black / red professional console */
+    --bg-base:#F4F5F7; --bg-panel:#FFFFFF; --bg-elevated:#F7F8FA; --bg-tile:#EDEFF3;
+    --bg-chrome:#0B0B0D; --bg-mid:#F4F5F7;
+    --hair:#E3E5EA; --hair-soft:rgba(0,0,0,.05);
+    --text:#0B0B0D; --muted:#585863; --muted-2:#93939E;
     --clear:#16A34A; --watch:#D97706; --alert:#DC2626; --active:#E11D2A;
     --clear-dim:rgba(22,163,74,.10); --watch-dim:rgba(217,119,6,.10);
     --alert-dim:rgba(220,38,38,.10); --active-dim:rgba(225,29,42,.10);
     --sidebar:#0B0B0D; --sidebar-hover:rgba(255,255,255,.06);
     --sidebar-active:rgba(225,29,42,.22); --sidebar-text:rgba(255,255,255,.74);
-    --sidebar-muted:rgba(255,255,255,.40); --sidebar-border:rgba(255,255,255,.08);
+    --sidebar-muted:rgba(255,255,255,.42); --sidebar-border:rgba(255,255,255,.08);
     --mono:"JetBrains Mono",ui-monospace,"SF Mono",Consolas,monospace;
     --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --radius:10px; --radius-sm:6px;
     --rail-w:240px; --tabbar-h:42px; --status-h:30px; --top-h:56px;
-    --shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.07);
+    --shadow:0 1px 3px rgba(0,0,0,.06),0 12px 30px rgba(0,0,0,.10);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
-    background:var(--bg-base);
+    background:
+      radial-gradient(115% 80% at 100% -10%, rgba(225,29,42,.05) 0%, transparent 44%),
+      var(--bg-base);
+    background-attachment:fixed;
     color:var(--text); font-family:var(--sans); font-size:13.5px; line-height:1.45;
     -webkit-font-smoothing:antialiased; overflow:hidden;
   }
@@ -40,7 +43,7 @@
     background:radial-gradient(120% 120% at 80% 0%,#2A0A0E 0%,#140406 45%,#0B0B0D 100%);}
   #signin.hide{display:none}
   .card{width:400px;background:#FFFFFF;
-    border:1px solid var(--hair);border-radius:18px;padding:36px;box-shadow:0 32px 80px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.2)}
+    border:1px solid var(--hair);border-radius:18px;padding:36px;box-shadow:0 32px 80px rgba(0,0,0,.4),0 0 0 1px rgba(225,29,42,.10)}
   .card .lock-logo{display:flex;align-items:center;gap:11px;margin-bottom:22px}
   .logo{width:38px;height:38px;border-radius:10px;position:relative;flex:0 0 auto;
     background:linear-gradient(135deg,var(--active-dim),rgba(225,29,42,.22));border:1.5px solid rgba(225,29,42,.40)}
@@ -98,7 +101,8 @@
   /* ---------- Top bar ---------- */
   .main{grid-column:2;grid-row:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
   .topbar{display:flex;align-items:center;gap:14px;height:var(--top-h);flex:0 0 auto;
-    padding:0 20px;border-bottom:1px solid var(--hair);border-top:3px solid var(--active);background:#FFFFFF;box-shadow:0 1px 0 var(--hair)}
+    padding:0 20px;border-bottom:1px solid var(--hair);border-top:2px solid var(--active);
+    background:#FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,.04)}
   .facility{display:flex;align-items:center;gap:8px}
   .facility select{background:var(--bg-elevated);color:var(--text);border:1px solid var(--hair);
     border-radius:7px;padding:7px 10px;font-family:inherit;font-size:12.5px;cursor:pointer}
@@ -131,7 +135,7 @@
     background:transparent;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;
     color:var(--muted);font-size:12.5px;white-space:nowrap;position:relative;top:1px;transition:background .12s,color .12s}
   .tab:hover{background:var(--hair-soft);color:var(--text)}
-  .tab.active{background:#FFFFFF;border-color:var(--hair);color:var(--text)}
+  .tab.active{background:var(--bg-panel);border-color:var(--hair);color:var(--text)}
   .tab.active:after{content:"";position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--active);border-radius:2px}
   .tab .ti{width:14px;height:14px;color:currentColor;opacity:.8}
   .tab .x{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;font-size:13px;color:var(--muted-2)}
@@ -150,14 +154,17 @@
   .eyebrow{color:var(--active);font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;margin-bottom:5px;font-weight:600}
 
   .grid{display:grid;gap:15px}
-  .panel{background:var(--bg-panel);border:1px solid var(--hair);border-radius:var(--radius);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+  .panel{background:var(--bg-panel);border:1px solid var(--hair);border-radius:var(--radius);overflow:hidden;
+    box-shadow:0 1px 3px rgba(0,0,0,.04),0 6px 16px rgba(0,0,0,.05)}
   .panel-head{display:flex;align-items:center;gap:9px;padding:13px 16px;border-bottom:1px solid var(--hair);background:var(--bg-panel)}
   .panel-head h3{margin:0;font-size:13px;font-weight:650;color:var(--text)}
   .panel-head .sub{color:var(--muted-2);font-size:11px;margin-left:auto;font-family:var(--mono)}
   .panel-body{padding:15px}
 
   .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:13px}
-  .kpi{background:var(--bg-panel);border:1px solid var(--hair);border-radius:var(--radius);padding:14px;position:relative;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+  .kpi{background:#FFFFFF;border:1px solid var(--hair);border-radius:var(--radius);padding:14px;position:relative;overflow:hidden;
+    box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04);transition:border-color .15s,transform .15s,box-shadow .15s}
+  .kpi:hover{border-color:rgba(225,29,42,.35);transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.08)}
   .kpi .lab{color:var(--muted);font-size:11px}
   .kpi .val{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:5px;letter-spacing:-.01em}
   .kpi .delta{font-size:10.5px;font-family:var(--mono);margin-top:4px}
@@ -174,7 +181,9 @@
   .ops-sep{width:1px;height:13px;background:rgba(255,255,255,.18)}
 
   .feeds{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
-  .cam{background:var(--bg-panel);border:1px solid var(--hair);border-radius:var(--radius);overflow:hidden;position:relative;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+  .cam{background:var(--bg-panel);border:1px solid var(--hair);border-radius:var(--radius);overflow:hidden;position:relative;
+    box-shadow:0 1px 4px rgba(0,0,0,.05),0 6px 16px rgba(0,0,0,.05);transition:border-color .15s}
+  .cam:hover{border-color:rgba(225,29,42,.3)}
   .scene{aspect-ratio:16/9;position:relative;overflow:hidden;background:#0A0A0C}
   .scanline{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--clear),transparent);opacity:.45;animation:scan 4.5s linear infinite}
   @keyframes scan{0%{top:-2px}100%{top:168px}}
@@ -210,8 +219,8 @@
 
   .btn{font-family:inherit;font-size:12.5px;border-radius:7px;padding:7px 13px;cursor:pointer;
     border:1.5px solid var(--hair);background:var(--bg-elevated);color:var(--text);transition:.14s;font-weight:500}
-  .btn:hover{border-color:var(--active);background:#FFFFFF}
-  .btn.pri{background:var(--active);border-color:var(--active);color:#FFFFFF;font-weight:600}
+  .btn:hover{border-color:var(--active);background:var(--bg-panel);color:var(--text)}
+  .btn.pri{background:var(--active);border-color:var(--active);color:#FFFFFF;font-weight:600;box-shadow:0 2px 10px rgba(225,29,42,.25)}
   .btn.pri:hover{background:#B91722;border-color:#B91722}
   .btn.danger{background:transparent;border-color:var(--alert);color:var(--alert)}
   .btn.danger:hover{background:var(--alert-dim)}
@@ -252,7 +261,7 @@
 
   .zone-map{height:226px;border:1px solid var(--hair);border-radius:8px;position:relative;overflow:hidden;background:
     repeating-linear-gradient(0deg,transparent,transparent 27px,var(--hair) 27px,var(--hair) 28px),
-    repeating-linear-gradient(90deg,transparent,transparent 27px,var(--hair) 27px,var(--hair) 28px),#F1F5F9}
+    repeating-linear-gradient(90deg,transparent,transparent 27px,var(--hair) 27px,var(--hair) 28px),var(--bg-tile)}
   .zone{position:absolute;border-radius:6px;display:grid;place-items:center;font-size:10.5px;text-align:center}
   .zone.restricted{border:1.5px dashed var(--alert);background:var(--alert-dim);color:var(--alert)}
   .zone.safe{border:1.5px solid var(--clear);background:var(--clear-dim);color:var(--clear)}
@@ -739,6 +748,7 @@
                   <!-- Uploaded clip plays here (overlays the live feed while scanning) -->
                   <div id="gate-anpr-preview" style="display:none;position:absolute;inset:0;z-index:6;background:#000">
                     <video id="gate-anpr-vid" class="cctv-feed" style="filter:none" autoplay loop muted playsinline></video>
+                    <img id="gate-anpr-preview-img" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000" alt="Plate image preview">
                     <button class="cam-ov-close" onclick="gateClearVideo()" style="position:absolute;top:6px;right:6px;z-index:9">× LIVE</button>
                   </div>
                   <!-- Detection box: white while scanning, green if authorised, red if denied -->
@@ -764,9 +774,9 @@
                        ondragleave="this.classList.remove('drag-over')"
                        ondrop="gateAnprDrop(event)"
                        onclick="document.getElementById('gate-anpr-file').click()">
-                    <span id="gate-anpr-dz-label">Drop gate camera video or click to browse · MP4 · AVI · MOV · MKV · WebM</span>
+                    <span id="gate-anpr-dz-label">Drop a plate image or gate video, or click to browse · JPG · PNG · MP4 · AVI · MOV · MKV · WebM</span>
                   </div>
-                  <input type="file" id="gate-anpr-file" accept="video/*" style="display:none" onchange="gateAnprFileChosen(this)">
+                  <input type="file" id="gate-anpr-file" accept="image/*,video/*" style="display:none" onchange="gateAnprFileChosen(this)">
                   <div id="gate-anpr-fname" style="margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--muted-2)"></div>
                   <button class="btn sm pri" id="gate-anpr-btn" style="width:100%;margin-top:8px" onclick="gateAnprStart()" disabled>Scan for Plates</button>
                 </div>
@@ -3680,7 +3690,7 @@
   }
 
   // ─── Gate & Access — ANPR scanner ────────────────────────────────────────────
-  let gateAnprFile = null, gateAnprJobId = null, gateAnprTimer = null;
+  let gateAnprFile = null, gateAnprJobId = null, gateAnprTimer = null, gateAnprIsImage = false;
   let gateTrackRAF = null, gateTrack = null, gateObjUrl = null;
 
   // Gate detection box (mirrors CAM-01): ready / scanning / granted / denied / hide
@@ -3752,15 +3762,16 @@
   }
   window.gateClearVideo = function(){
     _gateStopTracking(); _gateSetScanBox('hide');
-    const vid = document.getElementById('gate-anpr-vid'); if(vid){ vid.pause(); vid.src = ''; }
-    // Return the box to its drop-prompt state so a new video can be chosen
+    const vid = document.getElementById('gate-anpr-vid'); if(vid){ vid.pause(); vid.src = ''; vid.style.display = ''; }
+    const pimg = document.getElementById('gate-anpr-preview-img'); if(pimg){ pimg.src = ''; pimg.style.display = 'none'; }
+    // Return the box to its drop-prompt state so a new file can be chosen
     const preview = document.getElementById('gate-anpr-preview'); if(preview) preview.style.display = 'none';
     const zone = document.getElementById('gate-anpr-zone'); if(zone){ zone.style.display = ''; zone.style.borderColor = ''; }
     const fnameEl = document.getElementById('gate-anpr-fname'); if(fnameEl) fnameEl.textContent = '';
     const btn = document.getElementById('gate-anpr-btn'); if(btn) btn.disabled = true;
-    const statusEl = document.getElementById('gate-anpr-status'); if(statusEl) statusEl.textContent = 'Idle — upload a gate video to scan';
+    const statusEl = document.getElementById('gate-anpr-status'); if(statusEl) statusEl.textContent = 'Idle — upload a plate image or gate video to scan';
     const fileIn = document.getElementById('gate-anpr-file'); if(fileIn) fileIn.value = '';
-    gateAnprFile = null;
+    gateAnprFile = null; gateAnprIsImage = false;
     if(gateObjUrl){ URL.revokeObjectURL(gateObjUrl); gateObjUrl = null; }
   };
 
@@ -3768,33 +3779,44 @@
     ev.preventDefault();
     document.getElementById('gate-anpr-zone').classList.remove('drag-over');
     const f = ev.dataTransfer.files[0];
-    if (f && f.type.startsWith('video/')) _setGateAnprFile(f);
-    else _toast('Please drop a video file (MP4, AVI, MOV…)', 'warn');
+    if (f && (f.type.startsWith('video/') || f.type.startsWith('image/'))) _setGateAnprFile(f);
+    else _toast('Please drop an image or video file', 'warn');
   }
   function gateAnprFileChosen(inp) { if (inp.files[0]) _setGateAnprFile(inp.files[0]); }
   function _setGateAnprFile(f) {
     gateAnprFile = f;
+    gateAnprIsImage = (f.type || '').startsWith('image/');
+    const icon = gateAnprIsImage ? '🖼' : '📹';
     document.getElementById('gate-anpr-fname').textContent =
-      `📹  ${f.name}  (${(f.size / 1048576).toFixed(1)} MB)`;
+      `${icon}  ${f.name}  (${(f.size / 1048576).toFixed(1)} MB)`;
     document.getElementById('gate-anpr-btn').disabled = false;
     document.getElementById('gate-anpr-zone').style.borderColor = 'var(--active)';
     document.getElementById('gate-anpr-status').textContent = 'Ready — click Scan for Plates';
 
-    // Show the dropped video INSIDE the drop box (replaces the drop prompt)
+    // Show the dropped media INSIDE the drop box (replaces the drop prompt)
     if (gateObjUrl) URL.revokeObjectURL(gateObjUrl);
     gateObjUrl = URL.createObjectURL(f);
     const zone    = document.getElementById('gate-anpr-zone');
     const preview = document.getElementById('gate-anpr-preview');
     const vid     = document.getElementById('gate-anpr-vid');
+    const pimg    = document.getElementById('gate-anpr-preview-img');
     if (zone)    zone.style.display = 'none';
     if (preview) preview.style.display = '';
-    if (vid) { vid.src = gateObjUrl; vid.play().catch(() => {}); }
+    if (gateAnprIsImage) {
+      // Still image — show it, hide the looping video element
+      if (vid)  { vid.pause(); vid.style.display = 'none'; }
+      if (pimg) { pimg.src = gateObjUrl; pimg.style.display = ''; }
+    } else {
+      if (pimg) pimg.style.display = 'none';
+      if (vid)  { vid.style.display = ''; vid.src = gateObjUrl; vid.play().catch(() => {}); }
+    }
     _gateStopTracking();
     _gateSetScanBox('ready', 'VEHICLE');
   }
 
   async function gateAnprStart() {
     if (!gateAnprFile) return;
+    if (gateAnprIsImage) return _gateAnprScanImage();
     const btn = document.getElementById('gate-anpr-btn');
     btn.disabled = true; btn.textContent = 'Uploading…';
     document.getElementById('gate-anpr-status').textContent = 'Uploading…';
@@ -3819,6 +3841,65 @@
       btn.disabled = false; btn.textContent = 'Scan for Plates';
       document.getElementById('gate-anpr-status').textContent = 'Error: ' + e.message;
       _toast('Upload failed: ' + e.message, 'err');
+    }
+  }
+
+  // Single-image ANPR: hits /scan-image and shows the result immediately (no job/poll)
+  async function _gateAnprScanImage() {
+    const btn = document.getElementById('gate-anpr-btn');
+    btn.disabled = true; btn.textContent = 'Scanning…';
+    document.getElementById('gate-anpr-status').textContent = 'Scanning image…';
+    document.getElementById('gate-anpr-decisions').style.display = 'none';
+    document.getElementById('gate-anpr-frame-wrap').style.display = 'none';
+    document.getElementById('gate-anpr-bar').style.width = '0';
+    document.getElementById('gate-anpr-pct').textContent = '—';
+    _gateStopTracking();
+    _gateSetScanBox('scanning', 'SCANNING…');
+
+    const fd = new FormData();
+    fd.append('image', gateAnprFile);
+    try {
+      const res = await fetch(`${API}/api/v1/anpr/scan-image`, { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      const data   = await res.json();          // { plates, annotated_image }
+      const plates = data.plates || [];
+      const auth   = plates.filter(p => p.authorized).length;
+
+      document.getElementById('gate-anpr-total').textContent  = plates.length;
+      document.getElementById('gate-anpr-auth').textContent   = auth;
+      document.getElementById('gate-anpr-denied').textContent = plates.length - auth;
+      document.getElementById('gate-anpr-bar').style.width    = '100%';
+      document.getElementById('gate-anpr-pct').textContent    = '100%';
+      document.getElementById('gate-anpr-status').textContent = 'Scan complete ✓';
+      btn.textContent = 'Scan Another'; btn.disabled = false;
+
+      // Annotated detection image
+      const frameWrap = document.getElementById('gate-anpr-frame-wrap');
+      const frameImg  = document.getElementById('gate-anpr-frame-img');
+      const frameSub  = document.getElementById('gate-anpr-frame-sub');
+      if (data.annotated_image && frameImg) {
+        frameImg.src = data.annotated_image;
+        if (frameWrap) frameWrap.style.display = '';
+        if (frameSub)  frameSub.textContent = `${plates.length} plate${plates.length !== 1 ? 's' : ''} detected`;
+      }
+
+      _gateAnprRenderDecisions(plates);
+      loadGateLog();
+
+      if (plates.length) {
+        const top = [...plates].sort((a, b) =>
+          a.authorized !== b.authorized ? (a.authorized ? -1 : 1) : b.confidence - a.confidence)[0];
+        _gateSetScanBox(top.authorized ? 'granted' : 'denied',
+          (top.authorized ? 'AUTHORIZED · ' : 'DENIED · ') + _fmtPlate(top.plate));
+      } else {
+        _gateSetScanBox('denied', 'NO PLATE');
+        _toast('No readable plate found in this image', 'warn');
+      }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Retry';
+      document.getElementById('gate-anpr-status').textContent = 'Error: ' + e.message;
+      _gateSetScanBox('denied', 'ERROR');
+      _toast('Scan failed: ' + e.message, 'err');
     }
   }
 

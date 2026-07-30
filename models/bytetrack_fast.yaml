@@ -1,0 +1,19 @@
+# ByteTrack config tuned for FAST-MOVING vehicles (live ANPR path).
+#
+# A fast car moves a long way between two frames, so the box IoU across frames
+# is low and the detection is often motion-blurred (lower confidence). The stock
+# bytetrack.yaml drops these tracks — the ID flickers and the cached plate read is
+# lost before OCR ever locks on. These values keep weak/fast tracks alive:
+#
+#   • lower detection thresholds  → blurred (low-confidence) fast cars still track
+#   • higher match_thresh         → tolerate the low box-IoU of a fast mover so it
+#                                    stays the SAME id frame-to-frame (no ID switch)
+#   • larger track_buffer         → survive brief misses (blur / occlusion) without
+#                                    starting a new id, so one car = one plate read
+tracker_type: bytetrack
+track_high_thresh: 0.20  # first-stage match: lower to keep faint/blurred fast cars
+track_low_thresh: 0.05   # second-stage: recover very low-score fast detections
+new_track_thresh: 0.30   # start a new track only on a reasonably solid detection
+track_buffer: 60         # keep a lost fast track alive ~2s @30fps through blur gaps
+match_thresh: 0.90       # accept lower-IoU matches → same id survives big jumps
+fuse_score: True

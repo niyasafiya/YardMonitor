@@ -129,19 +129,23 @@ class _YOLOv8Detector:
         print(f"[YOLOv8] Loaded {model_path}")
 
     def detect(self, frame: np.ndarray, track: bool = False,
-               imgsz: Optional[int] = None) -> List[Detection]:
-        sz = imgsz or self.IMGSZ
+               imgsz: Optional[int] = None, conf: Optional[float] = None,
+               tracker: Optional[str] = None) -> List[Detection]:
+        sz  = imgsz or self.IMGSZ
+        cnf = self.VEHICLE_CONF if conf is None else conf
         if track:
             results = self._model.track(
                 frame,
-                conf=self.VEHICLE_CONF,
+                conf=cnf,
                 persist=True,
                 verbose=False,
-                tracker="bytetrack.yaml",
+                # Custom tracker (e.g. models/bytetrack_fast.yaml) keeps fast movers'
+                # ids stable; default bytetrack.yaml otherwise.
+                tracker=tracker or "bytetrack.yaml",
                 imgsz=sz,
             )
         else:
-            results = self._model(frame, conf=self.VEHICLE_CONF, verbose=False, imgsz=sz)
+            results = self._model(frame, conf=cnf, verbose=False, imgsz=sz)
 
         names = results[0].names
         boxes = results[0].boxes
@@ -257,13 +261,15 @@ class Detector:
         return self._backend
 
     def detect(self, frame: np.ndarray, track: bool = False,
-               imgsz: Optional[int] = None) -> List[Detection]:
+               imgsz: Optional[int] = None, conf: Optional[float] = None,
+               tracker: Optional[str] = None) -> List[Detection]:
         if self._impl is None:
             return []
         try:
-            return self._impl.detect(frame, track=track, imgsz=imgsz)
+            return self._impl.detect(frame, track=track, imgsz=imgsz,
+                                     conf=conf, tracker=tracker)
         except TypeError:
-            # YOLOv4 fallback impl doesn't accept imgsz
+            # YOLOv4 fallback impl only accepts (frame, track)
             return self._impl.detect(frame, track=track)
 
     def draw(self, frame: np.ndarray, detections: List[Detection]) -> np.ndarray:
