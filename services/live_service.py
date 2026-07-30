@@ -50,6 +50,19 @@ _FAST_SPEED     = 14.0     # box-centre px/frame above which a track counts as "
 _PRUNE_AFTER    = 300      # forget a track not seen for this many frames (~free memory)
 _JPEG_Q         = 78
 
+# ── Adaptive detection stride (CPU-only anti-lag) ────────────────────────────
+# YOLO runs on every frame by default. On a machine that can't keep up, that's
+# the main source of lag. When the measured display FPS drops below _FPS_SLOW we
+# run detection on every _DET_STRIDE_MAX-th frame instead and REUSE the previous
+# boxes on the frames in between — the video still shows every frame, only the
+# boxes refresh at half rate. Throughput ~doubles. Hysteresis (_FPS_OK) prevents
+# flip-flopping. When the machine is fast (FPS ≥ _FPS_OK) stride stays 1, so on a
+# capable host behaviour is IDENTICAL to before — the optimisation only activates
+# under exactly the load that causes lag.
+_DET_STRIDE_MAX = 2
+_FPS_SLOW       = 9.0      # below this measured fps → skip-detect (stride up)
+_FPS_OK         = 15.0     # above this → back to per-frame detection (stride down)
+
 _COLORS = {                # BGR
     "known_auth":   (104, 210, 118),  # green  — plate read + whitelisted
     "known_deny":   (72,  86, 240),   # red    — plate read, not whitelisted
@@ -283,16 +296,36 @@ def _draw(frame: np.ndarray, dets, results: dict, meta: dict, fps: float) -> Non
 
 
 def _process_frame(detector, frame: np.ndarray, frame_idx: int,
-                   results: dict, meta: dict, q: "queue.Queue", fps: float) -> bytes:
+                   results: dict, meta: dict, q: "queue.Queue", fps: float,
+                   run_detect: bool = True, prev_dets=None):
+    """Process one frame and return (jpeg_bytes, detections).
+
+    When `run_detect` is False we skip the (expensive) YOLO pass and reuse
+    `prev_dets` — the video still shows this frame, only the boxes are one frame
+    stale. The per-track velocity / sharpest-crop / OCR-queue work is likewise
+    skipped on those frames because it's only meaningful on a fresh detection.
+    """
     h, w = frame.shape[:2]
     if w > _STREAM_W:
         s = _STREAM_W / w
         frame = cv2.resize(frame, (_STREAM_W, int(h * s)))
     fw = frame.shape[1]
 
-    dets = (detector.detect(frame, track=True, imgsz=_DET_IMGSZ,
-                            conf=_DET_CONF, tracker=_TRACKER_CFG)
-            if detector.available else [])
+    if run_detect and detector.available:
+        dets = detector.detect(frame, track=True, imgsz=_DET_IMGSZ,
+                               conf=_DET_CONF, tracker=_TRACKER_CFG)
+    else:
+        # Reuse last detection (skip-detect frame) — keeps the stream smooth
+        # under load without paying for YOLO on every frame.
+        dets = prev_dets or []
+
+    if not run_detect:
+        # No fresh boxes → just draw the reused ones and emit. Velocity, crop
+        # selection and OCR queueing all need a real detection, so they wait for
+        # the next detect frame.
+        _draw(frame, dets, results, meta, fps)
+        ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_Q])
+        return (jpg.tobytes() if ok else b""), dets
 
     # ── Per-track update: velocity (for prioritising / labelling fast movers) and
     #    the SHARPEST plate crop seen so far. Reading OCR off the crispest frame is
@@ -360,7 +393,7 @@ def _process_frame(detector, frame: np.ndarray, frame_idx: int,
 
     _draw(frame, dets, results, meta, fps)
     ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_Q])
-    return jpg.tobytes() if ok else b""
+    return (jpg.tobytes() if ok else b""), dets
 
 
 def _status_jpg(line1: str, line2: str = "") -> bytes:
@@ -457,6 +490,8 @@ async def live_mjpeg(src: str):
     fps        = 0.0
     t_prev     = time.time()
     last_status_t = 0.0
+    stride     = 1          # adaptive detection stride (1 = detect every frame)
+    prev_dets  = []         # last real detection, reused on skip-detect frames
     try:
         while True:
             seq, frame, status = grab.latest()
@@ -481,8 +516,16 @@ async def live_mjpeg(src: str):
                 fps = 0.85 * fps + 0.15 * (1.0 / dt) if fps else (1.0 / dt)
             t_prev = now
 
-            jpg = await asyncio.to_thread(
-                _process_frame, detector, frame, frame_idx, results, meta, q, fps)
+            # Adapt stride from measured FPS (hysteresis avoids flip-flopping).
+            if fps and fps < _FPS_SLOW:
+                stride = _DET_STRIDE_MAX
+            elif fps >= _FPS_OK:
+                stride = 1
+            run_detect = (frame_idx % stride == 0)
+
+            jpg, prev_dets = await asyncio.to_thread(
+                _process_frame, detector, frame, frame_idx, results, meta, q, fps,
+                run_detect, prev_dets)
             if jpg:
                 yield boundary + jpg + b"\r\n"
 
