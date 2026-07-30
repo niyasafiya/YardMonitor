@@ -40,11 +40,37 @@ app.add_middleware(
 
 
 def _warmup_ocr():
-    from services.anpr_service import _get_paddle, _get_easyocr
+    from services.anpr_service import _get_paddle, _get_easyocr, read_plate_crop
+    import numpy as np
+    import cv2
     print("[Startup] Loading OCR models in background…")
     reader = _get_paddle()
     if reader is None or reader == "FAILED":
         _get_easyocr()
+    # Loading the model is NOT enough — PaddleOCR compiles its MKL-DNN compute
+    # kernels on the FIRST inference of each input SHAPE (~4 s), which otherwise
+    # lands on the user's first upload. Run throwaway inferences here so that cost
+    # is paid at startup. We warm two representative shapes: a small tight crop and
+    # a full-width plate strip (what the contour finder produces on HD frames), so
+    # the common scan shapes are already compiled when the first upload arrives.
+    try:
+        from services.anpr_service import extract_plates_from_frame
+        small = np.full((60, 200, 3), 235, np.uint8)
+        cv2.putText(small, "AB12CD", (12, 44),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (20, 20, 20), 3)
+        read_plate_crop(small)
+        strip = np.full((376, 1280, 3), 235, np.uint8)
+        cv2.putText(strip, "AB12CD3456", (60, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX, 5.0, (20, 20, 20), 8)
+        read_plate_crop(strip)
+        # Full scan path (contour → region crop → OCR) at the 1280-wide work size.
+        frame = np.full((720, 1280, 3), 90, np.uint8)
+        cv2.rectangle(frame, (520, 470), (760, 545), (235, 235, 235), -1)
+        cv2.putText(frame, "AB12CD3456", (532, 527),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.1, (15, 15, 15), 3)
+        extract_plates_from_frame(frame)
+    except Exception as exc:
+        print(f"[Startup] OCR warm-up inference skipped: {exc}")
     print("[Startup] OCR ready — first scan will be fast.")
 
 
